@@ -1,0 +1,89 @@
+name: Publish (npm)
+
+# Publishes the package to npmjs on a v* tag. Publication is gated on a
+# self-contained `verify` job (type-check + test + build) that re-runs the
+# checks against the exact tagged commit, so a broken tag never ships.
+# Authentication uses npm OIDC trusted publishing — no long-lived NPM_TOKEN.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (type-check + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+      - name: Deployment ids match @meddleware/access-gate-sui
+        run: npm run check:deployments
+      - name: Type-check
+        run: npm run type-check --if-present
+      - name: Unit tests
+        run: npm run test --if-present
+      - name: Build
+        run: npm run build --if-present
+
+  publish-npm:
+    name: npmjs (@meddleware/access-gate-client)
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # required for OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; Node 24 ships an older npm.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@11.20.0
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build --if-present
+      - name: Tag matches the package version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "${TAG#v}" != "$VERSION" ]; then
+            echo "::error::tag ${TAG} does not match package.json version ${VERSION}"
+            exit 1
+          fi
+
+      - name: Publish to npmjs (OIDC, idempotent)
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          ENC=$(printf '%s' "$NAME" | sed 's#/#%2f#')
+          # Check the registry directly — `npm view` can transiently miss a freshly
+          # first-published version and then attempt a re-publish. A 200 means it's live.
+          if [ "$(curl -s -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/${ENC}/${VERSION}")" = "200" ]; then
+            echo "::notice::v${VERSION} already published to npmjs — skipping."
+          else
+            # Publish, but treat a "version already exists" error as success so a
+            # manually-published version (or a registry race) leaves the job green.
+            set +e; OUT=$(npm publish --provenance --access public 2>&1); RC=$?; set -e
+            printf '%s\n' "$OUT"
+            if [ "$RC" -ne 0 ]; then
+              if printf '%s' "$OUT" | grep -qiE 'cannot publish over|previously published|EPUBLISHCONFLICT'; then
+                echo "::notice::v${VERSION} already published — treating as success."
+              else
+                exit "$RC"
+              fi
+            fi
+          fi

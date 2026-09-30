@@ -1,0 +1,43 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.0.1] - 2026-09-30
+
+First release. The `access_gate` reads and builders move here from `@meddleware/nft-gate-client`
+0.0.12, which keeps only the gateway wire protocol.
+
+### Added
+
+- **`./deployments`** — `accessGateDeployment(network)` returns `{ originalId, publishedAt,
+  platformConfigId }`.
+  - Generated from `@meddleware/access-gate-sui` 0.0.3.
+  - CI checks for drift.
+- **Events.** `listAccessGateEvents` returns every `access_gate` event, typed per kind and decoded
+  from BCS.
+  - `AccessConsumed` carries `consumer` and `nonce`.
+  - Cursor paging, newest first.
+  - Optional read-indexer source with a 3 s fallback to the full node.
+  - Also exported: `parseAccessGateEvent`, `accessGateEventType`, `ACCESS_GATE_EVENT_KINDS`.
+- **Reads.**
+  - `ownsPlatformAdminCap`.
+  - `listAllOwnedObjects` (paged, bounded by `MAX_OWNED_PAGES`).
+  - `fetchPlatformConfig` returns every field and throws for a wrong object.
+- **Errors.** `ACCESS_GATE_ABORTS` (codes 1–12) and `abortMessage(error, originalId?)`.
+- **Type strings.** `accessGateType`, `accessNftType`, `isAccessGateType`, `normalizeAccessNftType`.
+
+### Changed (from nft-gate-client 0.0.12)
+
+- **Exact type matching.**
+  - Parsers compare the normalised full type; suffix matching is gone.
+  - They take the type they expect: `parseOwnedAccessNft(entry, nftType)`,
+    `parseAdminCap(entry, originalId)`, `parseGate(entry, originalId)`,
+    `parsePlatformConfig(entry, originalId)`.
+  - `fetchGate`, `fetchPlatformConfig` and `fetchAccessNftById` take the same extra argument.
+- **Paging.** Owned-object reads follow every page. Before, only the first page was read.
+  `ownsAccessNft` stops at the first match.
+- `fetchAdminCaps` / `fetchOwnedGates` take the package's **original id** (they used to take
+  `packageId`).
