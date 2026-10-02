@@ -4,10 +4,12 @@ import { ACCESS_GATE_ABORTS, abortMessage } from '../src/aborts.js'
 const PKG = '0x1a81ca177db039585e575beeeee4759466e55910e936a6733e38dbb65025eea4'
 
 describe('ACCESS_GATE_ABORTS', () => {
-  it('covers codes 1–12 with their Move constant names', () => {
-    expect(Object.keys(ACCESS_GATE_ABORTS).map(Number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+  it('covers codes 1–14 with their Move constant names', () => {
+    expect(Object.keys(ACCESS_GATE_ABORTS).map(Number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
     expect(ACCESS_GATE_ABORTS[5].name).toBe('E_WRONG_GATE')
     expect(ACCESS_GATE_ABORTS[12].name).toBe('E_FREE_FEE_UNPAID')
+    expect(ACCESS_GATE_ABORTS[13].name).toBe('E_WRONG_VERSION')
+    expect(ACCESS_GATE_ABORTS[14].name).toBe('E_NOT_UPGRADE')
   })
 })
 

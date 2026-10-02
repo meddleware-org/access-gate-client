@@ -61,6 +61,11 @@ export interface CommissionTerms {
 
 /** An `access_gate` package's shared `PlatformConfig`. */
 export interface PlatformConfigInfo {
+  /**
+   * The only package version allowed to act on this config and its gates (`migrate` moves it
+   * forward). `null` for packages published before version gating.
+   */
+  version: bigint | null
   /** Receives commissions and fees. */
   treasury: string
   /** Commission in basis points (≤ 1000). */
@@ -256,6 +261,13 @@ export interface PlatformConfigUpdated extends EventOrigin {
   freeGateFeeMist: bigint
 }
 
+/** `PlatformMigratedEvent` — `migrate` retired every package version before `toVersion`. */
+export interface PlatformMigrated extends EventOrigin {
+  kind: 'PlatformMigrated'
+  fromVersion: bigint
+  toVersion: bigint
+}
+
 /** Any `access_gate` event, discriminated by `kind`. */
 export type AccessGateEvent =
   | GateCreated
@@ -265,5 +277,6 @@ export type AccessGateEvent =
   | GateFrozen
   | GateMadeFree
   | PlatformConfigUpdated
+  | PlatformMigrated
 
 export type AccessGateEventKind = AccessGateEvent['kind']

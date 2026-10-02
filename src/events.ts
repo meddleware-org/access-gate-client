@@ -74,6 +74,10 @@ const LAYOUTS = {
     min_commission_mist: bcs.u64(),
     free_gate_fee_mist: bcs.u64(),
   }),
+  PlatformMigratedEvent: bcs.struct('PlatformMigratedEvent', {
+    from_version: bcs.u64(),
+    to_version: bcs.u64(),
+  }),
 } as const
 
 /** Event kind ↔ Move struct name. */
@@ -85,6 +89,7 @@ const STRUCT_OF: Record<AccessGateEventKind, AccessGateEventStruct> = {
   GateFrozen: 'GateFrozenEvent',
   GateMadeFree: 'GateMadeFreeEvent',
   PlatformConfigUpdated: 'PlatformConfigUpdatedEvent',
+  PlatformMigrated: 'PlatformMigratedEvent',
 }
 
 /** Every event kind, in declaration order. */
@@ -214,10 +219,19 @@ export function parseAccessGateEvent(entry: CoreEventEntry, originalId: string):
         freeGateFeeMist: BigInt(e.free_gate_fee_mist),
       }
     }
+    case 'PlatformMigratedEvent': {
+      const e = LAYOUTS.PlatformMigratedEvent.parse(bytes)
+      return {
+        kind: 'PlatformMigrated',
+        ...origin,
+        fromVersion: BigInt(e.from_version),
+        toVersion: BigInt(e.to_version),
+      }
+    }
   }
 }
 
-/** The gate an event concerns, if any (`PlatformConfigUpdated` concerns none). */
+/** The gate an event concerns, if any (`PlatformConfigUpdated` and `PlatformMigrated` concern none). */
 export function eventGateId(event: AccessGateEvent): string | null {
   return 'gateId' in event ? event.gateId : null
 }
@@ -242,7 +256,7 @@ export interface ListAccessGateEventsOptions {
   originalId: string
   /** Event kinds to return (default: all). */
   kinds?: readonly AccessGateEventKind[]
-  /** Only events concerning this gate (drops `PlatformConfigUpdated`). */
+  /** Only events concerning this gate (drops `PlatformConfigUpdated` and `PlatformMigrated`). */
   gateId?: string
   /** Target number of events (default 20, at most 100). */
   limit?: number

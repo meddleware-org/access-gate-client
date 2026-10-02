@@ -37,7 +37,7 @@ export function buildPurchaseTx(cfg: AccessGateConfig, priceMist: bigint | numbe
 /**
  * Build a PTB that consumes one use of a single-use NFT, binding it to `nonce`. Selects
  * `consume` or `consume_soulbound` from `cfg.soulbound`. For unlimited passes there is
- * nothing to consume — do not call this.
+ * nothing to consume — do not call this. Reads the shared `PlatformConfig` (version gate).
  */
 export function buildConsumeTx(
   cfg: AccessGateConfig,
@@ -49,7 +49,7 @@ export function buildConsumeTx(
   const nonceBytes = Array.from(new TextEncoder().encode(nonce))
   tx.moveCall({
     target: `${cfg.packageId}::access_gate::${fn}`,
-    arguments: [tx.object(nftId), tx.object(cfg.gateId), tx.pure.vector('u8', nonceBytes)],
+    arguments: [tx.object(nftId), tx.object(cfg.gateId), tx.object(cfg.platformConfigId), tx.pure.vector('u8', nonceBytes)],
   })
   return tx
 }
@@ -136,7 +136,8 @@ function buildGateAdminCall(
   const tx = new Transaction()
   tx.moveCall({
     target: `${ctx.packageId}::access_gate::${fn}`,
-    arguments: [tx.object(ctx.adminCapId), tx.object(ctx.gateId), ...extraArgs(tx)],
+    // Every gate setter reads the shared PlatformConfig after the gate (version gate).
+    arguments: [tx.object(ctx.adminCapId), tx.object(ctx.gateId), tx.object(ctx.platformConfigId), ...extraArgs(tx)],
   })
   return tx
 }
@@ -147,7 +148,7 @@ function buildGateAdminCall(
  * use `buildMakeGateFreeTx`).
  */
 export function buildSetPriceTx(ctx: GateAdminContext, priceMist: bigint | number): Transaction {
-  return buildGateAdminCall(ctx, 'set_price', (tx) => [tx.object(ctx.platformConfigId), tx.pure.u64(priceMist)])
+  return buildGateAdminCall(ctx, 'set_price', (tx) => [tx.pure.u64(priceMist)])
 }
 
 /**

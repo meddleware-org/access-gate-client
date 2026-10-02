@@ -21,6 +21,7 @@ export type AccessGateEventStruct =
   | 'GateFrozenEvent'
   | 'GateMadeFreeEvent'
   | 'PlatformConfigUpdatedEvent'
+  | 'PlatformMigratedEvent'
 
 /**
  * The full type `<originalId>::access_gate::<name>`, with the address normalised to 64 hex digits.

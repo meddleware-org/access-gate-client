@@ -32,7 +32,8 @@ gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
   - Never edit it by hand. CI runs `check:deployments`.
   - No other file holds a package or object id.
 - **Abort table.**
-  - `ACCESS_GATE_ABORTS` mirrors the `E_*` constants in `access_gate.move` (codes 1–12).
+  - `ACCESS_GATE_ABORTS` mirrors the `E_*` constants in `access_gate.move` (codes 1–14).
+  - Every builder that touches a gate or consumes passes `platformConfigId` (the on-chain version gate).
   - `abortMessage` only claims aborts located in the `access_gate` module.
 - **`@mysten/sui` is the only runtime dependency.**
 - **No secrets.** Signers and RPC endpoints are caller-supplied.

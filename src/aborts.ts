@@ -21,6 +21,11 @@ export const ACCESS_GATE_ABORTS: Readonly<Record<number, AccessGateAbort>> = Obj
   10: { name: 'E_FREEZE_WHILE_PAUSED', message: "This gate's policy forbids freezing it while paused." },
   11: { name: 'E_PRICE_TOO_LOW', message: 'The price is below the platform minimum for a paid gate.' },
   12: { name: 'E_FREE_FEE_UNPAID', message: 'Pay the free-gate fee before setting the price to 0.' },
+  13: {
+    name: 'E_WRONG_VERSION',
+    message: 'This version of the access-gate contract has been retired; reload to use the current one.',
+  },
+  14: { name: 'E_NOT_UPGRADE', message: 'The platform is already at this contract version.' },
 })
 
 /** Where an abort came from, as far as the error shows. */

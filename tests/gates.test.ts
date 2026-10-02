@@ -190,6 +190,7 @@ describe('PlatformConfig commission', () => {
     type: `${PKG}::access_gate::PlatformConfig`,
     json: {
       id: { id: '0xcfg' },
+      version: '1',
       treasury: '0xtreasury',
       commission_bps: '20',
       min_commission_mist: '1000000',
@@ -198,8 +199,11 @@ describe('PlatformConfig commission', () => {
   }
 
   it('parsePlatformConfig reads treasury, commission terms and free-gate fee (bare or { object })', () => {
-    const want = { treasury: '0xtreasury', commissionBps: 20n, minCommissionMist: 1_000_000n, freeGateFeeMist: 100_000_000n }
+    const want = { version: 1n, treasury: '0xtreasury', commissionBps: 20n, minCommissionMist: 1_000_000n, freeGateFeeMist: 100_000_000n }
     expect(parsePlatformConfig(cfgObj, PKG)).toEqual(want)
+    // A package published before version gating has no `version` field.
+    const { version: _v, ...preGating } = cfgObj.json!
+    expect(parsePlatformConfig({ ...cfgObj, json: preGating }, PKG)).toEqual({ ...want, version: null })
     expect(parsePlatformConfig({ object: cfgObj }, PKG)).toEqual(want)
     expect(parsePlatformConfig({ objectId: '0xcfg', type: cfgObj.type }, PKG)).toBeNull()
     expect(parsePlatformConfig({ ...cfgObj, type: `${LOOKALIKE}::access_gate::PlatformConfig` }, PKG)).toBeNull()

@@ -46,6 +46,11 @@ describe.skipIf(!RUN)('gRPC read path (real testnet full node)', () => {
     }
   })
 
+  it('the recorded PlatformConfig is version-gated at version 1', async () => {
+    const { version } = await fetchPlatformConfig(any, platformConfigId, originalId)
+    expect(version).toBe(1n)
+  })
+
   it('the platform treasury does or does not hold the PlatformAdminCap (well-formed answer)', async () => {
     const { treasury } = await fetchPlatformConfig(any, platformConfigId, originalId)
     expect(typeof (await ownsPlatformAdminCap(any, treasury, originalId))).toBe('boolean')

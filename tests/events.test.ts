@@ -41,6 +41,7 @@ const frozen = bcs.struct('GateFrozenEvent', {
   locked_commission: bcs.option(bcs.struct('CommissionTerms', { bps: bcs.u64(), min_mist: bcs.u64() })),
   timestamp_ms: bcs.u64(),
 })
+const migrated = bcs.struct('PlatformMigratedEvent', { from_version: bcs.u64(), to_version: bcs.u64() })
 const platform = bcs.struct('PlatformConfigUpdatedEvent', {
   treasury: bcs.Address,
   commission_bps: bcs.u64(),
@@ -143,6 +144,13 @@ describe('parseAccessGateEvent', () => {
     expect(parseAccessGateEvent(entry('GateFrozenEvent', none), PKG)).toMatchObject({ lockedCommission: null })
   })
 
+  it('decodes PlatformMigrated, which concerns no gate', () => {
+    const bytes = migrated.serialize({ from_version: 1, to_version: 2 }).toBytes()
+    const e = parseAccessGateEvent(entry('PlatformMigratedEvent', bytes), PKG)
+    expect(e).toMatchObject({ kind: 'PlatformMigrated', fromVersion: 1n, toVersion: 2n })
+    expect(eventGateId(e!)).toBeNull()
+  })
+
   it('decodes PlatformConfigUpdated, which concerns no gate', () => {
     const bytes = platform
       .serialize({ treasury: ALICE, commission_bps: 20, min_commission_mist: 1_000_000, free_gate_fee_mist: 100_000_000 })
@@ -170,7 +178,7 @@ describe('parseAccessGateEvent', () => {
   })
 
   it('names every kind at the original id', () => {
-    expect(ACCESS_GATE_EVENT_KINDS).toHaveLength(7)
+    expect(ACCESS_GATE_EVENT_KINDS).toHaveLength(8)
     expect(accessGateEventType(PKG, 'AccessConsumed')).toBe(`${PKG_LONG}::access_gate::AccessConsumedEvent`)
   })
 })

@@ -53,7 +53,7 @@ await ownsAccessNft(client, owner, nftType, gateId) // stops at the first match
 await fetchAccessNfts(client, owner, nftType, gateId) // every page
 await fetchOwnedGates(client, operator, originalId) // the gates an address administers
 await fetchGate(client, gateId, originalId)
-await fetchPlatformConfig(client, platformConfigId, originalId) // treasury, commission, fees
+await fetchPlatformConfig(client, platformConfigId, originalId) // version, treasury, commission, fees
 await ownsPlatformAdminCap(client, address, originalId)
 ```
 
@@ -111,7 +111,8 @@ try { /* sign and execute */ } catch (e) {
 
 - `abortMessage` finds an `access_gate` abort in an SDK `ExecutionError`, a `SimulationError`, a
   failed transaction's status, or error text from the SDK or a wallet.
-- It returns the user-facing message for codes 1–12 (`ACCESS_GATE_ABORTS`).
+- It returns the user-facing message for codes 1–14 (`ACCESS_GATE_ABORTS`); 13 (`E_WRONG_VERSION`)
+  means the called package version has been retired — rebuild against the current `publishedAt`.
 - Aborts from other modules or packages return `null`.
 
 ## Development

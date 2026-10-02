@@ -135,7 +135,7 @@ describe('policy + commission helpers', () => {
   })
 
   it('gateCommissionMist prefers the gate’s locked terms over the live platform terms', () => {
-    const platform = { treasury: '0x1', commissionBps: 20n, minCommissionMist: 5_000_000n, freeGateFeeMist: 0n }
+    const platform = { version: 1n, treasury: '0x1', commissionBps: 20n, minCommissionMist: 5_000_000n, freeGateFeeMist: 0n }
     expect(gateCommissionMist({ priceMist: 100_000_000n, lockedCommission: null }, platform)).toBe(5_000_000n)
     expect(gateCommissionMist({ priceMist: 100_000_000n, lockedCommission: terms }, platform)).toBe(1_000_000n)
   })
@@ -148,21 +148,21 @@ describe('gate-admin PTB builders', () => {
   // Each admin builder must call the named entry with [adminCap, gate, ...] as the first two args.
   const cases: Array<{ name: string; fn: string; tx: () => { getData: () => unknown }; inputs: number }> = [
     { name: 'buildSetPriceTx', fn: 'set_price', tx: () => buildSetPriceTx(adminCtx, 10_000_000n), inputs: 4 },
-    { name: 'buildSetPaymentRecipientTx', fn: 'set_payment_recipient', tx: () => buildSetPaymentRecipientTx(adminCtx, RECIPIENT), inputs: 3 },
-    { name: 'buildSetPausedTx', fn: 'set_paused', tx: () => buildSetPausedTx(adminCtx, true), inputs: 3 },
-    { name: 'buildSetDefaultUsesTx', fn: 'set_default_uses', tx: () => buildSetDefaultUsesTx(adminCtx, 5n), inputs: 3 },
-    { name: 'buildSetSoulboundTx', fn: 'set_soulbound', tx: () => buildSetSoulboundTx(adminCtx, true), inputs: 3 },
-    { name: 'buildSetAutoBurnAtZeroTx', fn: 'set_auto_burn_at_zero', tx: () => buildSetAutoBurnAtZeroTx(adminCtx, false), inputs: 3 },
-    { name: 'buildSetNftNameTx', fn: 'set_nft_name', tx: () => buildSetNftNameTx(adminCtx, 'Name'), inputs: 3 },
-    { name: 'buildSetNftImageUrlTx', fn: 'set_nft_image_url', tx: () => buildSetNftImageUrlTx(adminCtx, 'https://x/y.png'), inputs: 3 },
-    { name: 'buildSetNftDescriptionTx', fn: 'set_nft_description', tx: () => buildSetNftDescriptionTx(adminCtx, 'desc'), inputs: 3 },
+    { name: 'buildSetPaymentRecipientTx', fn: 'set_payment_recipient', tx: () => buildSetPaymentRecipientTx(adminCtx, RECIPIENT), inputs: 4 },
+    { name: 'buildSetPausedTx', fn: 'set_paused', tx: () => buildSetPausedTx(adminCtx, true), inputs: 4 },
+    { name: 'buildSetDefaultUsesTx', fn: 'set_default_uses', tx: () => buildSetDefaultUsesTx(adminCtx, 5n), inputs: 4 },
+    { name: 'buildSetSoulboundTx', fn: 'set_soulbound', tx: () => buildSetSoulboundTx(adminCtx, true), inputs: 4 },
+    { name: 'buildSetAutoBurnAtZeroTx', fn: 'set_auto_burn_at_zero', tx: () => buildSetAutoBurnAtZeroTx(adminCtx, false), inputs: 4 },
+    { name: 'buildSetNftNameTx', fn: 'set_nft_name', tx: () => buildSetNftNameTx(adminCtx, 'Name'), inputs: 4 },
+    { name: 'buildSetNftImageUrlTx', fn: 'set_nft_image_url', tx: () => buildSetNftImageUrlTx(adminCtx, 'https://x/y.png'), inputs: 4 },
+    { name: 'buildSetNftDescriptionTx', fn: 'set_nft_description', tx: () => buildSetNftDescriptionTx(adminCtx, 'desc'), inputs: 4 },
     { name: 'buildAirdropTx', fn: 'airdrop', tx: () => buildAirdropTx(adminCtx, RECIPIENT, 1_000_000n), inputs: 5 },
     { name: 'buildMakeGateFreeTx', fn: 'make_gate_free', tx: () => buildMakeGateFreeTx(adminCtx, 100_000_000n), inputs: 4 },
     { name: 'buildMakeGateImmutableTx', fn: 'make_gate_immutable', tx: () => buildMakeGateImmutableTx(adminCtx), inputs: 3 },
   ]
 
   for (const c of cases) {
-    it(`${c.name} targets access_gate::${c.fn} with cap + gate + ${c.inputs - 2} value(s)`, () => {
+    it(`${c.name} targets access_gate::${c.fn} with cap + gate + ${c.inputs - 2} more input(s)`, () => {
       const json = commandsJson(c.tx())
       expect(json).toContain(`"function":"${c.fn}"`)
       expect(json).toContain('"module":"access_gate"')
@@ -174,8 +174,9 @@ describe('gate-admin PTB builders', () => {
     })
   }
 
-  it('builders that read PlatformConfig pass it', () => {
-    for (const tx of [buildSetPriceTx(adminCtx, 10_000_000n), buildAirdropTx(adminCtx, RECIPIENT, 0n), buildMakeGateFreeTx(adminCtx, 0n), buildMakeGateImmutableTx(adminCtx)]) {
+  it('every gate-admin builder passes PlatformConfig (version gate)', () => {
+    for (const c of cases) {
+      const tx = c.tx()
       expect(commandsJson(tx)).toContain(PLATFORM.slice(2))
     }
   })
@@ -219,8 +220,8 @@ describe('ptb builders — exact arguments', () => {
     expect(callArgs(tx, 'purchase')).toEqual([`obj:${GATE}`, `obj:${PLATFORM}`, 'result:0'])
   })
 
-  it('consume(nft, gate, nonce bytes) and the soulbound variant', () => {
-    const expected = [`obj:${NFT}`, `obj:${GATE}`, bytes('nonce-1')]
+  it('consume(nft, gate, platformConfig, nonce bytes) and the soulbound variant', () => {
+    const expected = [`obj:${NFT}`, `obj:${GATE}`, `obj:${PLATFORM}`, bytes('nonce-1')]
     expect(callArgs(buildConsumeTx(cfg, NFT, 'nonce-1'), 'consume')).toEqual(expected)
     expect(callArgs(buildConsumeTx({ ...cfg, soulbound: true }, NFT, 'nonce-1'), 'consume_soulbound')).toEqual(expected)
   })
@@ -268,9 +269,9 @@ describe('ptb builders — exact arguments', () => {
     expect(args).toHaveLength(10)
   })
 
-  it('admin setters pass (cap, gate, value) in order', () => {
-    const head = [`obj:${ADMIN_CAP}`, `obj:${GATE}`]
-    expect(callArgs(buildSetPriceTx(adminCtx, 7n), 'set_price')).toEqual([...head, `obj:${PLATFORM}`, u64(7n)])
+  it('admin setters pass (cap, gate, platformConfig, value) in order', () => {
+    const head = [`obj:${ADMIN_CAP}`, `obj:${GATE}`, `obj:${PLATFORM}`]
+    expect(callArgs(buildSetPriceTx(adminCtx, 7n), 'set_price')).toEqual([...head, u64(7n)])
     expect(callArgs(buildSetPaymentRecipientTx(adminCtx, RECIPIENT), 'set_payment_recipient')).toEqual([...head, addr(RECIPIENT)])
     expect(callArgs(buildSetPausedTx(adminCtx, true), 'set_paused')).toEqual([...head, bool(true)])
     expect(callArgs(buildSetDefaultUsesTx(adminCtx, 9n), 'set_default_uses')).toEqual([...head, u64(9n)])
@@ -279,8 +280,8 @@ describe('ptb builders — exact arguments', () => {
     expect(callArgs(buildSetNftNameTx(adminCtx, 'N'), 'set_nft_name')).toEqual([...head, str('N')])
     expect(callArgs(buildSetNftImageUrlTx(adminCtx, 'https://x/y.png'), 'set_nft_image_url')).toEqual([...head, str('https://x/y.png')])
     expect(callArgs(buildSetNftDescriptionTx(adminCtx, 'D'), 'set_nft_description')).toEqual([...head, str('D')])
-    expect(callArgs(buildMakeGateImmutableTx(adminCtx), 'make_gate_immutable')).toEqual([...head, `obj:${PLATFORM}`])
-    expect(callArgs(buildMakeGateFreeTx(adminCtx, 5n), 'make_gate_free')).toEqual([...head, `obj:${PLATFORM}`, 'result:0'])
+    expect(callArgs(buildMakeGateImmutableTx(adminCtx), 'make_gate_immutable')).toEqual(head)
+    expect(callArgs(buildMakeGateFreeTx(adminCtx, 5n), 'make_gate_free')).toEqual([...head, 'result:0'])
   })
 
   it('airdrop(cap, gate, platform, commission, recipient)', () => {

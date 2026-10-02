@@ -88,6 +88,7 @@ export function parsePlatformConfig(entry: unknown, originalId: string): Platfor
     return null
   }
   return {
+    version: f.version === undefined ? null : BigInt(f.version as string),
     treasury: String(f.treasury),
     commissionBps: BigInt(f.commission_bps as string),
     minCommissionMist: BigInt(f.min_commission_mist as string),

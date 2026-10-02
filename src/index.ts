@@ -29,6 +29,7 @@ export type {
   GateFrozen,
   GateMadeFree,
   PlatformConfigUpdated,
+  PlatformMigrated,
 } from './types.js'
 
 export {
