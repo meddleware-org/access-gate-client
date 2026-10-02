@@ -66,12 +66,14 @@ function findAbort(error: unknown): AbortSite | null {
 
   // SDK: "MoveAbort in 2nd command, abort code: 5, in '0x…::access_gate::consume' (instruction 12)"
   const sdk = /abort code: (\d+), in '(0x[0-9a-fA-F]+)::(\w+)/.exec(text)
-  if (sdk) return { code: Number(sdk[1]), package: normalizeSuiAddress(sdk[2]), module: sdk[3] }
+  if (sdk?.[1] && sdk[2] && sdk[3]) return { code: Number(sdk[1]), package: normalizeSuiAddress(sdk[2]), module: sdk[3] }
   // Node/wallet: "MoveAbort(MoveLocation { module: ModuleId { address: 1a81…, name: Identifier("access_gate") }, …}, 5)"
   const node = /MoveAbort\(MoveLocation \{ module: ModuleId \{ address: (0x)?([0-9a-fA-F]+), name: Identifier\("(\w+)"\) \}.*?\}, (\d+)\)/.exec(
     text,
   )
-  if (node) return { code: Number(node[4]), package: normalizeSuiAddress(node[2]), module: node[3] }
+  if (node?.[2] && node[3] && node[4]) {
+    return { code: Number(node[4]), package: normalizeSuiAddress(node[2]), module: node[3] }
+  }
   return null
 }
 

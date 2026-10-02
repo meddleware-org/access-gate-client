@@ -63,9 +63,9 @@ export interface CommissionTerms {
 export interface PlatformConfigInfo {
   /**
    * The only package version allowed to act on this config and its gates (`migrate` moves it
-   * forward). `null` for packages published before version gating.
+   * forward).
    */
-  version: bigint | null
+  version: bigint
   /** Receives commissions and fees. */
   treasury: string
   /** Commission in basis points (≤ 1000). */
@@ -102,7 +102,7 @@ export interface OwnedGate {
   nftImageUrl: string
   /** Default NFT description minted into future NFTs. */
   nftDescription: string
-  /** Immutable restrictions (all `false` for gates of package versions that predate policies). */
+  /** Immutable restrictions, fixed at creation. */
   policy: GatePolicy
   /** Commission terms snapshotted at freeze (when `policy.lockCommissionOnFreeze`), else `null`. */
   lockedCommission: CommissionTerms | null

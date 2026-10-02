@@ -16,10 +16,15 @@ const PKG_LONG = `0x${'0'.repeat(62)}a1`
 const LOOKALIKE = '0xa1a1'
 const ADMIN_CAP_TYPE = `${PKG}::access_gate::AdminCap`
 const GATE_TYPE = `${PKG}::access_gate::Gate`
-const GATE_A = '0xa'
-const GATE_B = '0xb'
-const CAP_A = '0xca'
-const CAP_B = '0xcb'
+// Parsers return normalised ids, so fixtures use the long form.
+const id = (hex: string) => `0x${hex.padStart(64, '0')}`
+const GATE_A = id('a')
+const GATE_B = id('b')
+const CAP_A = id('ca')
+const CAP_B = id('cb')
+const RECIPIENT = id('e1')
+const TREASURY = id('7e')
+const NO_POLICY = { freeze_requires_unpaused: false, lock_commission_on_freeze: false, pause_blocks_decryption: false, pause_blocks_access: false }
 
 /** A core-API object (gRPC): id + type top-level, Move struct fields flat under `json`. */
 function capObj(adminCapId: string, gateId: string): CoreObject {
@@ -32,9 +37,9 @@ function gateObj(gateId: string, over: Record<string, unknown> = {}): CoreObject
     type: GATE_TYPE,
     json: {
       id: { id: gateId },
-      admin_cap_id: '0xcap',
+      admin_cap_id: CAP_A,
       price_mist: '1000',
-      payment_recipient: '0xrecipient',
+      payment_recipient: RECIPIENT,
       default_uses: '3',
       soulbound: true,
       auto_burn_at_zero: false,
@@ -43,6 +48,9 @@ function gateObj(gateId: string, over: Record<string, unknown> = {}): CoreObject
       nft_name: 'Test Pass',
       nft_image_url: 'https://x/y.png',
       nft_description: 'desc',
+      policy: NO_POLICY,
+      locked_commission: null,
+      free_fee_paid: false,
       ...over,
     },
   }
@@ -74,7 +82,7 @@ describe('gate discovery (gRPC core API)', () => {
     expect(g).toEqual({
       gateId: GATE_A,
       priceMist: 1000n,
-      paymentRecipient: '0xrecipient',
+      paymentRecipient: RECIPIENT,
       defaultUses: 3n,
       soulbound: true,
       autoBurnAtZero: false,
@@ -112,6 +120,25 @@ describe('gate discovery (gRPC core API)', () => {
 
   it('parseGate returns null when fields are missing', () => {
     expect(parseGate({ objectId: GATE_A, type: GATE_TYPE }, PKG)).toBeNull()
+  })
+
+  it('parseGate never invents a value for a missing or mistyped field', () => {
+    // A missing price must not read as a free gate.
+    const { price_mist: _p, ...noPrice } = gateObj(GATE_A).json!
+    expect(parseGate({ ...gateObj(GATE_A), json: noPrice }, PKG)).toBeNull()
+    expect(parseGate(gateObj(GATE_A, { paused: 'false' }), PKG)).toBeNull()
+    expect(parseGate(gateObj(GATE_A, { price_mist: '-1' }), PKG)).toBeNull()
+    expect(parseGate(gateObj(GATE_A, { price_mist: '18446744073709551616' }), PKG)).toBeNull()
+    expect(parseGate(gateObj(GATE_A, { payment_recipient: 'nobody' }), PKG)).toBeNull()
+    expect(parseGate(gateObj(GATE_A, { policy: undefined }), PKG)).toBeNull()
+    expect(parseGate(gateObj(GATE_A, { policy: { ...NO_POLICY, pause_blocks_access: 1 } }), PKG)).toBeNull()
+    expect(parseGate(gateObj(GATE_A, { locked_commission: { bps: '1' } }), PKG)).toBeNull()
+  })
+
+  it('parseGate and parseAdminCap return normalised ids', () => {
+    expect(parseGate(gateObj('0xA'), PKG)?.gateId).toBe(GATE_A)
+    expect(parseGate(gateObj(GATE_A, { payment_recipient: '0xE1' }), PKG)?.paymentRecipient).toBe(RECIPIENT)
+    expect(parseAdminCap(capObj('0xCA', '0xa'), PKG)).toEqual({ adminCapId: CAP_A, gateId: GATE_A })
   })
 
   it('fetchAdminCaps reads every page of the normalised AdminCap type', async () => {
@@ -186,12 +213,12 @@ describe('gate discovery (gRPC core API)', () => {
 
 describe('PlatformConfig commission', () => {
   const cfgObj: CoreObject = {
-    objectId: '0xcfg',
+    objectId: id('cf'),
     type: `${PKG}::access_gate::PlatformConfig`,
     json: {
-      id: { id: '0xcfg' },
+      id: { id: id('cf') },
       version: '1',
-      treasury: '0xtreasury',
+      treasury: TREASURY,
       commission_bps: '20',
       min_commission_mist: '1000000',
       free_gate_fee_mist: '100000000',
@@ -199,13 +226,14 @@ describe('PlatformConfig commission', () => {
   }
 
   it('parsePlatformConfig reads treasury, commission terms and free-gate fee (bare or { object })', () => {
-    const want = { version: 1n, treasury: '0xtreasury', commissionBps: 20n, minCommissionMist: 1_000_000n, freeGateFeeMist: 100_000_000n }
+    const want = { version: 1n, treasury: TREASURY, commissionBps: 20n, minCommissionMist: 1_000_000n, freeGateFeeMist: 100_000_000n }
     expect(parsePlatformConfig(cfgObj, PKG)).toEqual(want)
-    // A package published before version gating has no `version` field.
+    // Every deployment is version-gated: a config without `version` is malformed.
     const { version: _v, ...preGating } = cfgObj.json!
-    expect(parsePlatformConfig({ ...cfgObj, json: preGating }, PKG)).toEqual({ ...want, version: null })
+    expect(parsePlatformConfig({ ...cfgObj, json: preGating }, PKG)).toBeNull()
+    expect(parsePlatformConfig({ ...cfgObj, json: { ...cfgObj.json, commission_bps: 'x' } }, PKG)).toBeNull()
     expect(parsePlatformConfig({ object: cfgObj }, PKG)).toEqual(want)
-    expect(parsePlatformConfig({ objectId: '0xcfg', type: cfgObj.type }, PKG)).toBeNull()
+    expect(parsePlatformConfig({ objectId: id('cf'), type: cfgObj.type }, PKG)).toBeNull()
     expect(parsePlatformConfig({ ...cfgObj, type: `${LOOKALIKE}::access_gate::PlatformConfig` }, PKG)).toBeNull()
     const { free_gate_fee_mist: _omit, ...partial } = cfgObj.json!
     expect(parsePlatformConfig({ ...cfgObj, json: partial }, PKG)).toBeNull()
@@ -213,8 +241,8 @@ describe('PlatformConfig commission', () => {
 
   it('fetchPlatformConfig requests json for the given object', async () => {
     const getObject = vi.fn(async () => ({ object: cfgObj }))
-    const res = await fetchPlatformConfig({ core: { getObject } }, '0xcfg', PKG)
-    expect(getObject).toHaveBeenCalledWith({ objectId: '0xcfg', include: { json: true } })
+    const res = await fetchPlatformConfig({ core: { getObject } }, id('cf'), PKG)
+    expect(getObject).toHaveBeenCalledWith({ objectId: id('cf'), include: { json: true } })
     expect(res.commissionBps).toBe(20n)
   })
 

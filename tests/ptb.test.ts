@@ -22,6 +22,7 @@ import {
   commissionForPrice,
   minimumPaidPriceMist,
   gateCommissionMist,
+  toU64,
 } from '../src/ptb.js'
 import type { AccessGateConfig, GateAdminContext } from '../src/types.js'
 
@@ -196,7 +197,7 @@ function callArgs(tx: { getData: () => unknown }, fn: string): string[] {
   if (!call) throw new Error(`no move call ${fn}`)
   return call.arguments.map((a) => {
     if (typeof a.Input === 'number') {
-      const input = data.inputs[a.Input]
+      const input = data.inputs[a.Input]!
       if (input.UnresolvedObject) return `obj:${input.UnresolvedObject.objectId}`
       if (input.Pure) return `pure:${input.Pure.bytes}`
       return 'input:?'
@@ -292,5 +293,25 @@ describe('ptb builders — exact arguments', () => {
       'result:0',
       addr(RECIPIENT),
     ])
+  })
+})
+
+describe('u64 amounts', () => {
+  it('accepts bigints and safe integers', () => {
+    expect(toU64(5)).toBe(5n)
+    expect(toU64(18446744073709551615n)).toBe(18446744073709551615n)
+  })
+
+  it('refuses unsafe or fractional numbers, negatives and values above u64', () => {
+    expect(() => toU64(2 ** 53)).toThrow(/safe integer/)
+    expect(() => toU64(1.5)).toThrow(/safe integer/)
+    expect(() => toU64(-1)).toThrow(/u64 range/)
+    expect(() => toU64(1n << 64n)).toThrow(/u64 range/)
+  })
+
+  it('builders refuse an unsafe number instead of encoding a different amount', () => {
+    const cfg = { packageId: '0x1', gateId: '0x2', platformConfigId: '0x3', nftType: '0x1::access_gate::AccessNFT' }
+    expect(() => buildPurchaseTx(cfg, 2 ** 60)).toThrow(/safe integer/)
+    expect(buildPurchaseTx(cfg, 2n ** 60n)).toBeTruthy()
   })
 })

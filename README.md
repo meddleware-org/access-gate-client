@@ -82,7 +82,8 @@ page.cursor // pass back as `cursor` for older events
 - With `indexer`, the first page is read from a read-indexer. If the indexer fails or takes longer
   than 3 s, the page comes from the full node instead, and `indexerError` says why.
 - A cursor stays with the source that issued it.
-- Indexer rows are decoded and type-checked like full-node events.
+- Indexer rows are decoded and type-checked like full-node events. The indexer URL must be `https:`
+  (`http:` only for a loopback host); `readIndexerEvents` is the shared reader.
 - Indexer data is for display. Never use it to authorise anything.
 
 ## Transactions

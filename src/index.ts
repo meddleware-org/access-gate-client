@@ -67,8 +67,15 @@ export {
   parseAccessGateEvent,
   eventGateId,
   listAccessGateEvents,
+  readIndexerEvents,
 } from './events.js'
-export type { EventCursor, IndexerSource, ListAccessGateEventsOptions, AccessGateEventPage } from './events.js'
+export type {
+  EventCursor,
+  IndexerSource,
+  IndexerEventsPage,
+  ListAccessGateEventsOptions,
+  AccessGateEventPage,
+} from './events.js'
 
 export { ACCESS_GATE_ABORTS, abortMessage } from './aborts.js'
 export type { AccessGateAbort } from './aborts.js'
@@ -82,6 +89,7 @@ export {
   commissionForPrice,
   minimumPaidPriceMist,
   gateCommissionMist,
+  toU64,
   buildPurchaseTx,
   buildConsumeTx,
   buildCreateGateTx,

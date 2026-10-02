@@ -7,11 +7,13 @@ import type {
   SuiObjectClient,
 } from './types.js'
 import { accessGateType, isAccessGateType } from './typeNames.js'
-import { coreObject, listAllOwnedObjects, structFields } from './ownership.js'
+import { coreObject, listAllOwnedObjects } from './ownership.js'
+import { boolField, idField, stringField, structFields, u64Field } from './json.js'
 
 // An operator holds an `AdminCap` per gate they administer. Discovery: list owned AdminCaps, read
 // each cap's `gate_id`, then fetch the shared `Gate`. Every parser checks the object's exact type
-// under the package's original id.
+// under the package's original id, and returns `null` when a field is missing or mistyped — never a
+// default (a missing price must not read as a free gate). IDs and addresses come back normalised.
 
 /** A gate's state as read from its `Gate` object (without the owning `AdminCap`). */
 export type GateState = Omit<OwnedGate, 'adminCapId'>
@@ -21,79 +23,79 @@ export function parseAdminCap(entry: unknown, originalId: string): { adminCapId:
   const obj = coreObject(entry)
   if (!obj?.objectId || !isAccessGateType(obj.type, originalId, 'AdminCap')) return null
   const f = structFields(obj.json)
-  const gateId: string | undefined = f?.gate_id ?? f?.gateId
-  return gateId ? { adminCapId: obj.objectId, gateId } : null
+  const gateId = idField(f?.gate_id ?? f?.gateId)
+  const adminCapId = idField(obj.objectId)
+  return gateId && adminCapId ? { adminCapId, gateId } : null
 }
 
-/** Parse a `Gate` shared object, or `null` if it is not one. */
+/** Parse a `Gate` shared object, or `null` if it is not one or a field is missing or mistyped. */
 export function parseGate(entry: unknown, originalId: string): GateState | null {
   const obj = coreObject(entry)
   if (!obj?.objectId || !isAccessGateType(obj.type, originalId, 'Gate')) return null
   const f = structFields(obj.json)
   if (!f) return null
-  return {
-    gateId: obj.objectId,
-    priceMist: BigInt(f.price_mist ?? 0),
-    paymentRecipient: String(f.payment_recipient ?? ''),
-    defaultUses: BigInt(f.default_uses ?? 0),
-    soulbound: Boolean(f.soulbound),
-    autoBurnAtZero: Boolean(f.auto_burn_at_zero),
-    paused: Boolean(f.paused),
-    frozen: Boolean(f.frozen),
-    nftName: String(f.nft_name ?? ''),
-    nftImageUrl: String(f.nft_image_url ?? ''),
-    nftDescription: String(f.nft_description ?? ''),
-    policy: parsePolicy(f.policy),
-    lockedCommission: parseOptionTerms(f.locked_commission),
-    freeFeePaid: Boolean(f.free_fee_paid),
+  const gate = {
+    gateId: idField(obj.objectId),
+    priceMist: u64Field(f.price_mist),
+    paymentRecipient: idField(f.payment_recipient),
+    defaultUses: u64Field(f.default_uses),
+    soulbound: boolField(f.soulbound),
+    autoBurnAtZero: boolField(f.auto_burn_at_zero),
+    paused: boolField(f.paused),
+    frozen: boolField(f.frozen),
+    nftName: stringField(f.nft_name),
+    nftImageUrl: stringField(f.nft_image_url),
+    nftDescription: stringField(f.nft_description),
+    freeFeePaid: boolField(f.free_fee_paid),
   }
+  if (Object.values(gate).some((v) => v === null)) return null
+  const policy = parsePolicy(f.policy)
+  const lockedCommission = parseOptionTerms(f.locked_commission)
+  if (!policy || lockedCommission === undefined) return null
+  return { ...(gate as { [K in keyof typeof gate]: NonNullable<(typeof gate)[K]> }), policy, lockedCommission }
 }
 
-/** Parse an on-chain `GatePolicy` (absent on package versions that predate policies → all false). */
-function parsePolicy(v: unknown): GatePolicy {
+/** Parse an on-chain `GatePolicy`; `null` if it is missing or a flag is not a bool. */
+function parsePolicy(v: unknown): GatePolicy | null {
   const p = structFields(v)
-  return {
-    freezeRequiresUnpaused: Boolean(p?.freeze_requires_unpaused),
-    lockCommissionOnFreeze: Boolean(p?.lock_commission_on_freeze),
-    pauseBlocksDecryption: Boolean(p?.pause_blocks_decryption),
-    pauseBlocksAccess: Boolean(p?.pause_blocks_access),
+  const policy = {
+    freezeRequiresUnpaused: boolField(p?.freeze_requires_unpaused),
+    lockCommissionOnFreeze: boolField(p?.lock_commission_on_freeze),
+    pauseBlocksDecryption: boolField(p?.pause_blocks_decryption),
+    pauseBlocksAccess: boolField(p?.pause_blocks_access),
   }
+  return Object.values(policy).some((b) => b === null) ? null : (policy as GatePolicy)
 }
 
 /**
  * Parse a Move `Option<CommissionTerms>` as rendered by gRPC (struct | null) or JSON-RPC
- * (`{ vec: [struct] }`).
+ * (`{ vec: [] | [struct] }`): the terms, `null` for none, or `undefined` if malformed.
  */
-function parseOptionTerms(v: unknown): CommissionTerms | null {
-  if (v === null || v === undefined || typeof v !== 'object') return null
-  const vec = (v as { vec?: unknown[] }).vec
-  const inner = Array.isArray(vec) ? vec[0] : v
-  const t = structFields(inner)
-  if (!t || t.bps === undefined || t.min_mist === undefined) return null
-  return { bps: BigInt(t.bps as string), minMist: BigInt(t.min_mist as string) }
+function parseOptionTerms(v: unknown): CommissionTerms | null | undefined {
+  if (v === null || v === undefined) return null
+  if (typeof v !== 'object') return undefined
+  const vec = (v as { vec?: unknown }).vec
+  if (Array.isArray(vec) && vec.length === 0) return null
+  const t = structFields(Array.isArray(vec) ? vec[0] : v)
+  const bps = u64Field(t?.bps)
+  const minMist = u64Field(t?.min_mist)
+  return bps === null || minMist === null ? undefined : { bps, minMist }
 }
 
-/** Parse a `PlatformConfig`, or `null` if it is not one or is malformed. */
+/** Parse a `PlatformConfig`, or `null` if it is not one or a field is missing or mistyped. */
 export function parsePlatformConfig(entry: unknown, originalId: string): PlatformConfigInfo | null {
   const obj = coreObject(entry)
   if (!obj || !isAccessGateType(obj.type, originalId, 'PlatformConfig')) return null
   const f = structFields(obj.json)
-  if (
-    !f ||
-    f.treasury === undefined ||
-    f.commission_bps === undefined ||
-    f.min_commission_mist === undefined ||
-    f.free_gate_fee_mist === undefined
-  ) {
+  const treasury = idField(f?.treasury)
+  const commissionBps = u64Field(f?.commission_bps)
+  const minCommissionMist = u64Field(f?.min_commission_mist)
+  const freeGateFeeMist = u64Field(f?.free_gate_fee_mist)
+  const version = u64Field(f?.version)
+  if (!treasury || commissionBps === null || minCommissionMist === null || freeGateFeeMist === null || version === null) {
     return null
   }
-  return {
-    version: f.version === undefined ? null : BigInt(f.version as string),
-    treasury: String(f.treasury),
-    commissionBps: BigInt(f.commission_bps as string),
-    minCommissionMist: BigInt(f.min_commission_mist as string),
-    freeGateFeeMist: BigInt(f.free_gate_fee_mist as string),
-  }
+  return { version, treasury, commissionBps, minCommissionMist, freeGateFeeMist }
 }
 
 /**

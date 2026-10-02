@@ -33,7 +33,7 @@ describe.skipIf(!RUN)('gRPC read path (real testnet full node)', () => {
     expect(page.source).toBe('rpc')
     expect(page.events.length).toBeGreaterThan(0)
     const checkpoints = page.events.map((e) => BigInt(e.checkpoint ?? '0'))
-    for (let i = 1; i < checkpoints.length; i++) expect(checkpoints[i]).toBeLessThanOrEqual(checkpoints[i - 1])
+    for (let i = 1; i < checkpoints.length; i++) expect(checkpoints[i]).toBeLessThanOrEqual(checkpoints[i - 1]!)
     for (const e of page.events) expect(e.txDigest).toBeTruthy()
   })
 

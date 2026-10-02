@@ -20,9 +20,16 @@ gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
   - Keep the look-alike-package tests.
 - **No silent truncation.** Owned-object reads page to the end (`listAllOwnedObjects`) and throw
   past `MAX_OWNED_PAGES`.
+- **Parsers fail closed.** Object fields are read with the strict readers in `src/json.ts`; a
+  missing or mistyped field makes the parser return `null` (never a default — a missing price is not
+  a free gate). IDs and addresses come back normalised, and gate-id filters compare normalised.
+- **u64 inputs.** Builders pass every amount through `toU64`: a bigint, or a `number` that is a safe
+  integer. An unsafe `number` throws instead of encoding a different amount.
 - **Events decode from BCS.** The layouts in `src/events.ts` mirror the Move event structs field for
   field. Change them in the same release as any event change in `access-gate-sui`.
 - **The indexer is display-only.**
+  - `readIndexerEvents` is the one indexer reader (seal-client uses it too): https only (loopback
+    http allowed), a timeout, a 1 MiB body cap before parsing, and a checked page shape.
   - `listAccessGateEvents` decodes and type-checks indexer rows exactly like full-node events.
   - It falls back to the full node for a first page.
   - Nothing here uses indexer data to authorise.

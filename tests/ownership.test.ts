@@ -7,6 +7,7 @@ import {
   listAllOwnedObjects,
   MAX_OWNED_PAGES,
 } from '../src/ownership.js'
+import { normalizeSuiAddress as N } from '@mysten/sui/utils'
 import type { CoreObject, OwnedObjectsClient, SuiObjectClient } from '../src/types.js'
 
 // Short-form ids on purpose: matching must normalise addresses.
@@ -48,11 +49,11 @@ function pagedClient(pages: CoreObject[][]): OwnedObjectsClient & { core: { list
 
 describe('parseOwnedAccessNft', () => {
   it('parses an unlimited pass (usesRemaining null)', () => {
-    expect(parseOwnedAccessNft(coreObj('0x1', GATE_A), NFT_TYPE)).toEqual({ objectId: '0x1', gateId: GATE_A, usesRemaining: null })
+    expect(parseOwnedAccessNft(coreObj('0x1', GATE_A), NFT_TYPE)).toEqual({ objectId: N('0x1'), gateId: N(GATE_A), usesRemaining: null })
   })
 
   it('parses a single-use NFT with remaining count', () => {
-    expect(parseOwnedAccessNft(coreObj('0x2', GATE_A, 3), NFT_TYPE)).toEqual({ objectId: '0x2', gateId: GATE_A, usesRemaining: 3 })
+    expect(parseOwnedAccessNft(coreObj('0x2', GATE_A, 3), NFT_TYPE)).toEqual({ objectId: N('0x2'), gateId: N(GATE_A), usesRemaining: 3 })
   })
 
   it('matches the type with addresses normalised', () => {
@@ -87,21 +88,21 @@ describe('parseOwnedAccessNft', () => {
 
   it('tolerates the nested `.fields` shape (transport robustness)', () => {
     const nested: CoreObject = {
-      objectId: '0xn',
+      objectId: '0xe',
       type: NFT_TYPE,
       json: { fields: { data: { fields: { gate_id: GATE_A, variant: { variant: 'SingleUse', fields: { uses_remaining: '5' } } } } } },
     }
-    expect(parseOwnedAccessNft(nested, NFT_TYPE)).toEqual({ objectId: '0xn', gateId: GATE_A, usesRemaining: 5 })
+    expect(parseOwnedAccessNft(nested, NFT_TYPE)).toEqual({ objectId: N('0xe'), gateId: N(GATE_A), usesRemaining: 5 })
   })
 
   it('accepts a getObject result ({ object })', () => {
-    expect(parseOwnedAccessNft({ object: coreObj('0x4', GATE_A, 1) }, NFT_TYPE)?.objectId).toBe('0x4')
+    expect(parseOwnedAccessNft({ object: coreObj('0x4', GATE_A, 1) }, NFT_TYPE)?.objectId).toBe(N('0x4'))
   })
 })
 
 describe('uses_remaining u64 parsing', () => {
   const withUses = (raw: string) => ({
-    objectId: '0xu',
+    objectId: '0xf',
     type: NFT_TYPE,
     json: { data: { gate_id: GATE_A, variant: { variant: 'SingleUse', fields: { uses_remaining: raw } } } },
   })
@@ -120,15 +121,26 @@ describe('owned-object reads (gRPC core API)', () => {
   it('fetchAccessNfts reads every page', async () => {
     const client = pagedClient([[coreObj('0x1', GATE_A)], [coreObj('0x2', GATE_B, 1)], [coreObj('0x3', GATE_A, 2)]])
     const all = await fetchAccessNfts(client, '0xowner', NFT_TYPE)
-    expect(all.map((n) => n.objectId)).toEqual(['0x1', '0x2', '0x3'])
+    expect(all.map((n) => n.objectId)).toEqual(['0x1', '0x2', '0x3'].map((x) => N(x)))
     expect(client.core.listOwnedObjects).toHaveBeenCalledTimes(3)
-    expect(client.core.listOwnedObjects.mock.calls[1][0]).toMatchObject({ cursor: '1' })
+    expect(client.core.listOwnedObjects.mock.calls[1]![0]).toMatchObject({ cursor: '1' })
   })
 
   it('fetchAccessNfts filters by gate id', async () => {
     const client = pagedClient([[coreObj('0x1', GATE_A), coreObj('0x2', GATE_B, 1)]])
     const onlyA = await fetchAccessNfts(client, '0xowner', NFT_TYPE, GATE_A)
-    expect(onlyA.map((n) => n.objectId)).toEqual(['0x1'])
+    expect(onlyA.map((n) => n.objectId)).toEqual([N('0x1')])
+  })
+
+  it('compares gate ids normalised (short, long and upper-case forms match)', async () => {
+    const client = pagedClient([[coreObj('0x1', GATE_A), coreObj('0x2', GATE_B, 1)]])
+    expect((await fetchAccessNfts(client, '0xowner', NFT_TYPE, N(GATE_A))).map((n) => n.objectId)).toEqual([N('0x1')])
+    expect(await ownsAccessNft(pagedClient([[coreObj('0x1', GATE_A)]]), '0xowner', NFT_TYPE, '0xA')).toBe(true)
+    expect(await ownsAccessNft(pagedClient([[coreObj('0x1', GATE_A)]]), '0xowner', NFT_TYPE, N(GATE_B))).toBe(false)
+  })
+
+  it('rejects an NFT whose gate id is not an address', () => {
+    expect(parseOwnedAccessNft(coreObj('0x1', 'gate-a'), NFT_TYPE)).toBeNull()
   })
 
   it('queries the normalised type with json', async () => {
@@ -158,9 +170,9 @@ describe('owned-object reads (gRPC core API)', () => {
   })
 
   it('fetchAccessNftById does a typed getObject and parses it', async () => {
-    const getObject = vi.fn(async () => ({ object: coreObj('0xnft', GATE_A, 4) }))
+    const getObject = vi.fn(async () => ({ object: coreObj('0x9f', GATE_A, 4) }))
     const client: SuiObjectClient = { core: { getObject } }
-    expect(await fetchAccessNftById(client, '0xnft', NFT_TYPE)).toEqual({ objectId: '0xnft', gateId: GATE_A, usesRemaining: 4 })
-    expect(getObject).toHaveBeenCalledWith(expect.objectContaining({ objectId: '0xnft', include: { json: true } }))
+    expect(await fetchAccessNftById(client, '0x9f', NFT_TYPE)).toEqual({ objectId: N('0x9f'), gateId: N(GATE_A), usesRemaining: 4 })
+    expect(getObject).toHaveBeenCalledWith(expect.objectContaining({ objectId: '0x9f', include: { json: true } }))
   })
 })

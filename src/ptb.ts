@@ -1,4 +1,5 @@
 import { Transaction } from '@mysten/sui/transactions'
+import type { TransactionResult } from '@mysten/sui/transactions'
 import type { AccessGateConfig, CommissionTerms, GateAdminContext, GatePolicy, OwnedGate, PlatformConfigInfo } from './types.js'
 
 /** The unrestricted policy — every restriction off (`default_gate_policy` on-chain). */
@@ -8,6 +9,35 @@ export const DEFAULT_GATE_POLICY: Readonly<GatePolicy> = Object.freeze({
   pauseBlocksDecryption: false,
   pauseBlocksAccess: false,
 })
+
+const MAX_U64 = (1n << 64n) - 1n
+
+/**
+ * A u64 transaction argument from a bigint or a safe integer. A `number` above 2^53 has already
+ * lost precision, so it is refused rather than encoded as a different amount.
+ *
+ * @throws {RangeError} if `v` is not an integer in `0..2^64-1`, or is an unsafe `number`.
+ */
+export function toU64(v: bigint | number): bigint {
+  if (typeof v === 'number' && !Number.isSafeInteger(v)) {
+    throw new RangeError(`not a safe integer amount: ${v} (pass a bigint)`)
+  }
+  const n = BigInt(v)
+  if (n < 0n || n > MAX_U64) throw new RangeError(`out of u64 range: ${n}`)
+  return n
+}
+
+/** The single result of a command that returns exactly one value. */
+function only(result: TransactionResult): TransactionResult[number] {
+  const [first] = result
+  if (!first) throw new Error('expected a command result')
+  return first
+}
+
+/** A coin of exactly `amount` MIST split from the gas coin. */
+function splitFromGas(tx: Transaction, amount: bigint | number): TransactionResult[number] {
+  return only(tx.splitCoins(tx.gas, [tx.pure.u64(toU64(amount))]))
+}
 
 /** True if `policy` enables any restriction. */
 export function isRestrictivePolicy(policy: GatePolicy): boolean {
@@ -21,12 +51,12 @@ export function isRestrictivePolicy(policy: GatePolicy): boolean {
 
 /**
  * Build a PTB that purchases access: split `priceMist` from the gas coin and call
- * `access_gate::purchase(gate, payment)`. Overpayment is refunded on-chain, so the split
- * must be exactly the price. The caller signs + executes with their wallet.
+ * `access_gate::purchase(gate, platformConfig, payment)`. Overpayment is refunded on-chain, so the
+ * split must be exactly the price. The caller signs + executes with their wallet.
  */
 export function buildPurchaseTx(cfg: AccessGateConfig, priceMist: bigint | number): Transaction {
   const tx = new Transaction()
-  const [payment] = tx.splitCoins(tx.gas, [tx.pure.u64(priceMist)])
+  const payment = splitFromGas(tx, priceMist)
   tx.moveCall({
     target: `${cfg.packageId}::access_gate::purchase`,
     arguments: [tx.object(cfg.gateId), tx.object(cfg.platformConfigId), payment],
@@ -83,7 +113,7 @@ export function buildCreateGateTx(
 ): Transaction {
   const tx = new Transaction()
   const p = opts.policy ?? DEFAULT_GATE_POLICY
-  const [policy] = tx.moveCall({
+  const policy = only(tx.moveCall({
     target: `${packageId}::access_gate::new_gate_policy`,
     arguments: [
       tx.pure.bool(p.freezeRequiresUnpaused),
@@ -91,10 +121,10 @@ export function buildCreateGateTx(
       tx.pure.bool(p.pauseBlocksDecryption),
       tx.pure.bool(p.pauseBlocksAccess),
     ],
-  })
+  }))
   const tail = [
     tx.pure.address(opts.paymentRecipient),
-    tx.pure.u64(opts.defaultUses),
+    tx.pure.u64(toU64(opts.defaultUses)),
     tx.pure.bool(opts.soulbound),
     tx.pure.bool(opts.autoBurnAtZero),
     tx.pure.string(opts.nftName),
@@ -104,7 +134,7 @@ export function buildCreateGateTx(
   ]
   if (BigInt(opts.priceMist) === 0n) {
     if (opts.freeGateFeeMist === undefined) throw new Error('freeGateFeeMist is required for a free gate')
-    const [fee] = tx.splitCoins(tx.gas, [tx.pure.u64(opts.freeGateFeeMist)])
+    const fee = splitFromGas(tx, opts.freeGateFeeMist)
     tx.moveCall({
       target: `${packageId}::access_gate::create_free_gate`,
       arguments: [tx.object(platformConfigId), fee, ...tail],
@@ -112,7 +142,7 @@ export function buildCreateGateTx(
   } else {
     tx.moveCall({
       target: `${packageId}::access_gate::create_gate`,
-      arguments: [tx.object(platformConfigId), tx.pure.u64(opts.priceMist), ...tail],
+      arguments: [tx.object(platformConfigId), tx.pure.u64(toU64(opts.priceMist)), ...tail],
     })
   }
   return tx
@@ -148,7 +178,7 @@ function buildGateAdminCall(
  * use `buildMakeGateFreeTx`).
  */
 export function buildSetPriceTx(ctx: GateAdminContext, priceMist: bigint | number): Transaction {
-  return buildGateAdminCall(ctx, 'set_price', (tx) => [tx.pure.u64(priceMist)])
+  return buildGateAdminCall(ctx, 'set_price', (tx) => [tx.pure.u64(toU64(priceMist))])
 }
 
 /**
@@ -157,7 +187,7 @@ export function buildSetPriceTx(ctx: GateAdminContext, priceMist: bigint | numbe
  */
 export function buildMakeGateFreeTx(ctx: GateAdminContext, feeMist: bigint | number): Transaction {
   const tx = new Transaction()
-  const [fee] = tx.splitCoins(tx.gas, [tx.pure.u64(feeMist)])
+  const fee = splitFromGas(tx, feeMist)
   tx.moveCall({
     target: `${ctx.packageId}::access_gate::make_gate_free`,
     arguments: [tx.object(ctx.adminCapId), tx.object(ctx.gateId), tx.object(ctx.platformConfigId), fee],
@@ -177,7 +207,7 @@ export function buildSetPausedTx(ctx: GateAdminContext, paused: boolean): Transa
 
 /** Change the default uses for future mints (0 ⇒ unlimited pass; N ⇒ single-use with N). */
 export function buildSetDefaultUsesTx(ctx: GateAdminContext, defaultUses: bigint | number): Transaction {
-  return buildGateAdminCall(ctx, 'set_default_uses', (tx) => [tx.pure.u64(defaultUses)])
+  return buildGateAdminCall(ctx, 'set_default_uses', (tx) => [tx.pure.u64(toU64(defaultUses))])
 }
 
 /** Switch the soulbound flag for future mints (does not affect already-minted NFTs). */
@@ -216,7 +246,7 @@ export function buildAirdropTx(
   commissionMist: bigint | number,
 ): Transaction {
   const tx = new Transaction()
-  const [payment] = tx.splitCoins(tx.gas, [tx.pure.u64(commissionMist)])
+  const payment = splitFromGas(tx, commissionMist)
   tx.moveCall({
     target: `${ctx.packageId}::access_gate::airdrop`,
     arguments: [

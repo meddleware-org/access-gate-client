@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.3] - 2026-10-02
+
+### Changed
+
+- **Parsers fail closed.** `parseGate`, `parsePlatformConfig`, `parseAdminCap` and
+  `parseOwnedAccessNft` return `null` when a field is missing or mistyped instead of substituting a
+  default (a missing price no longer reads as a free gate; a `"false"` string is not `true`). Every
+  `Gate` field, its `policy` and `free_fee_paid` are required; `PlatformConfigInfo.version` is a
+  `bigint` (every deployment is version-gated).
+- IDs and addresses read from objects are normalised (`0x` + 64 hex), and `fetchAccessNfts` /
+  `ownsAccessNft` compare the `gateId` filter normalised, so a short or upper-case id matches.
+- Amounts go through the new **`toU64`**: a `number` that is not a safe integer throws instead of
+  being encoded as a different amount.
+- **`readIndexerEvents`** (new export) is the shared indexer reader: https only (loopback http
+  allowed), the timeout, a 1 MiB body cap before parsing and a checked page shape. `IndexerEventsPage`
+  is exported with it.
+- An event type named after an `Object` prototype key is no longer looked up as a layout.
+- `"sideEffects": false`; `noUncheckedIndexedAccess` is on.
+
 ## [0.0.2] - 2026-10-02
 
 Follows the version-gated `access_gate` republish (testnet `0xa55789…`, `@meddleware/access-gate-sui`

@@ -124,7 +124,7 @@ export function parseAccessGateEvent(entry: CoreEventEntry, originalId: string):
   const prefix = `${normalizeSuiAddress(originalId)}::${ACCESS_GATE_MODULE}::`
   if (!type?.startsWith(prefix)) return null
   const name = type.slice(prefix.length)
-  if (!(name in LAYOUTS)) return null
+  if (!Object.hasOwn(LAYOUTS, name)) return null
   const bytes = typeof entry.bcs === 'string' ? fromBase64(entry.bcs) : entry.bcs
   const origin = {
     txDigest: entry.transactionDigest,
@@ -325,9 +325,10 @@ async function listFromRpc(
 ): Promise<AccessGateEventPage> {
   const { originalId } = options
   const gateId = options.gateId === undefined ? undefined : normalizeSuiAddress(options.gateId)
-  const single = kinds.length === 1
+  const only = kinds.length === 1 ? kinds[0] : undefined
+  const single = only !== undefined
   const eventType = single
-    ? accessGateEventType(originalId, kinds[0])
+    ? accessGateEventType(originalId, only)
     : `${normalizeSuiAddress(originalId)}::${ACCESS_GATE_MODULE}`
   const filtered = !single || gateId !== undefined
   const wanted = new Set(kinds)
@@ -354,11 +355,56 @@ async function listFromRpc(
   return { events, cursor: cursor ? { source: 'rpc', value: cursor } : null, source: 'rpc' }
 }
 
-/** The indexer's event row: the full node's event, verbatim (BCS base64). */
-interface IndexerEventsResponse {
+/** Longest indexer response body read (characters); a page of 100 events is far below it. */
+const MAX_INDEXER_RESPONSE = 1 << 20
+
+/** One page of indexer event rows: the full node's events, verbatim (BCS base64). */
+export interface IndexerEventsPage {
   events: CoreEventEntry[]
   cursor: string | null
-  indexedFromCheckpoint: string
+  /** Oldest checkpoint the indexer covers. */
+  indexedFromCheckpoint?: string
+}
+
+/**
+ * GET `<indexer.url>/<path>?<params>` within the indexer's timeout and return its event page. The
+ * shared reader for every indexer listing (access_gate events here, sealed-content pointers in
+ * seal-client). The rows are untrusted: callers decode and type-check each one like a full-node
+ * event.
+ *
+ * @throws {Error} if the URL is not `https:` (`http:` only for a loopback host), the request fails
+ *   or times out, the status is not 2xx, or the body is oversized, not JSON or not an event page.
+ */
+export async function readIndexerEvents(
+  indexer: IndexerSource,
+  path: string,
+  params: Record<string, string | undefined>,
+): Promise<IndexerEventsPage> {
+  const base = new URL(indexer.url.endsWith('/') ? indexer.url : `${indexer.url}/`)
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname)
+  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && loopback)) {
+    throw new Error(`indexer URL must use https: ${indexer.url}`)
+  }
+  const url = new URL(path, base)
+  for (const [key, value] of Object.entries(params)) if (value !== undefined) url.searchParams.set(key, value)
+
+  const res = await (indexer.fetch ?? fetch)(url, { signal: AbortSignal.timeout(indexer.timeoutMs ?? 3000) })
+  if (!res.ok) throw new Error(`indexer responded ${res.status}`)
+  const text = await res.text()
+  if (text.length > MAX_INDEXER_RESPONSE) throw new Error('indexer response too large')
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    throw new Error('indexer response is not JSON')
+  }
+  const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>
+  if (!Array.isArray(b.events)) throw new Error('indexer response has no events list')
+  const cursor = b.cursor ?? null
+  if (cursor !== null && typeof cursor !== 'string') throw new Error('indexer cursor is not a string')
+  const from = b.indexedFromCheckpoint
+  if (from !== undefined && typeof from !== 'string') throw new Error('indexer checkpoint is not a string')
+  return { events: b.events as CoreEventEntry[], cursor, indexedFromCheckpoint: from }
 }
 
 async function listFromIndexer(
@@ -369,19 +415,12 @@ async function listFromIndexer(
   limit: number,
   before: string | undefined,
 ): Promise<AccessGateEventPage> {
-  const url = new URL(
-    `v1/${encodeURIComponent(indexer.network)}/access-gate/events`,
-    indexer.url.endsWith('/') ? indexer.url : `${indexer.url}/`,
-  )
-  if (kinds.length < ACCESS_GATE_EVENT_KINDS.length) url.searchParams.set('kinds', [...kinds].sort().join(','))
-  if (gateId !== undefined) url.searchParams.set('gate', normalizeSuiAddress(gateId))
-  if (before) url.searchParams.set('before', before)
-  url.searchParams.set('limit', String(limit))
-
-  const res = await (indexer.fetch ?? fetch)(url, { signal: AbortSignal.timeout(indexer.timeoutMs ?? 3000) })
-  if (!res.ok) throw new Error(`indexer responded ${res.status}`)
-  const body = (await res.json()) as IndexerEventsResponse
-  if (!Array.isArray(body?.events)) throw new Error('indexer response has no events list')
+  const body = await readIndexerEvents(indexer, `v1/${encodeURIComponent(indexer.network)}/access-gate/events`, {
+    kinds: kinds.length < ACCESS_GATE_EVENT_KINDS.length ? [...kinds].sort().join(',') : undefined,
+    gate: gateId === undefined ? undefined : normalizeSuiAddress(gateId),
+    before,
+    limit: String(limit),
+  })
 
   const wanted = new Set(kinds)
   const gate = gateId === undefined ? undefined : normalizeSuiAddress(gateId)

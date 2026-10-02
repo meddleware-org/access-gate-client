@@ -7,6 +7,7 @@ import {
   eventGateId,
   listAccessGateEvents,
   parseAccessGateEvent,
+  readIndexerEvents,
 } from '../src/events.js'
 import type { CoreEventEntry, EventsClient } from '../src/types.js'
 
@@ -166,6 +167,13 @@ describe('parseAccessGateEvent', () => {
     expect(parseAccessGateEvent(row, PKG)?.kind).toBe('AccessMinted')
   })
 
+  it('does not treat Object prototype keys as event names', () => {
+    const e = mintedEntry(GATE_A)
+    for (const name of ['constructor', 'toString', 'hasOwnProperty']) {
+      expect(parseAccessGateEvent({ ...e, eventType: `${PKG}::access_gate::${name}` }, PKG)).toBeNull()
+    }
+  })
+
   it('rejects events of a look-alike package, other modules and unknown names', () => {
     const e = mintedEntry(GATE_A)
     expect(parseAccessGateEvent({ ...e, eventType: `${LOOKALIKE}::access_gate::AccessMintedEvent` }, PKG)).toBeNull()
@@ -302,5 +310,35 @@ describe('listAccessGateEvents (indexer)', () => {
     })
     expect(page.events).toHaveLength(1)
     expect(fetchFn).not.toHaveBeenCalled()
+  })
+})
+
+describe('readIndexerEvents (shared indexer reader)', () => {
+  const respond = (body: string, status = 200) => vi.fn(async () => new Response(body, { status }))
+  const source = (url: string, fetchFn: ReturnType<typeof vi.fn>) => ({ url, network: 'testnet', fetch: fetchFn as unknown as typeof fetch })
+
+  it('builds the URL from parsed parts and drops undefined params', async () => {
+    const fetchFn = respond(JSON.stringify({ events: [], cursor: null, indexedFromCheckpoint: '7' }))
+    const page = await readIndexerEvents(source('https://idx.example/base', fetchFn), 'v1/testnet/x', { a: '1', b: undefined })
+    expect(page).toEqual({ events: [], cursor: null, indexedFromCheckpoint: '7' })
+    expect(String((fetchFn.mock.calls[0] as unknown[])[0])).toBe('https://idx.example/base/v1/testnet/x?a=1')
+  })
+
+  it('refuses a plain-http indexer except on loopback', async () => {
+    const fetchFn = respond(JSON.stringify({ events: [], cursor: null }))
+    await expect(readIndexerEvents(source('http://idx.example', fetchFn), 'v1', {})).rejects.toThrow(/https/)
+    await expect(readIndexerEvents(source('http://127.0.0.1:8080', fetchFn), 'v1', {})).resolves.toMatchObject({ events: [] })
+  })
+
+  it('rejects oversized, non-JSON and mis-shaped bodies', async () => {
+    const url = 'https://idx.example'
+    await expect(readIndexerEvents(source(url, respond('x'.repeat((1 << 20) + 1))), 'v1', {})).rejects.toThrow(/too large/)
+    await expect(readIndexerEvents(source(url, respond('<html>')), 'v1', {})).rejects.toThrow(/not JSON/)
+    await expect(readIndexerEvents(source(url, respond('{}')), 'v1', {})).rejects.toThrow(/no events list/)
+    await expect(readIndexerEvents(source(url, respond('{"events":[],"cursor":5}')), 'v1', {})).rejects.toThrow(/cursor/)
+    await expect(
+      readIndexerEvents(source(url, respond('{"events":[],"cursor":null,"indexedFromCheckpoint":1}')), 'v1', {}),
+    ).rejects.toThrow(/checkpoint/)
+    await expect(readIndexerEvents(source(url, respond('', 502)), 'v1', {})).rejects.toThrow(/502/)
   })
 })
