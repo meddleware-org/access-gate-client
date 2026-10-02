@@ -42,9 +42,12 @@ gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
 ## Tests
 
 - **`npm test`** — offline unit tests: parsers, paging, events (BCS round-trips, indexer fallback),
-  aborts, deployments and type names.
+  aborts, deployments and type names. `tests/abi-table.test.ts` fails if an exported `build*Tx`
+  is missing from the ABI table (`tests/abi-table.ts`) — add every new builder there.
 - **`GRPC_TESTNET=1 npm run test:integration`** — live reads against public testnet, using the
-  recorded deployment.
+  recorded deployment, plus the ABI-drift check: every Move call in the ABI table must exist on
+  `publishedAt` (public or entry, same type-parameter and parameter counts, trailing `TxContext`
+  excluded), and `publishedAt` must be the package's latest version.
 
 ---
 

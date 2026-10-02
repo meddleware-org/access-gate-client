@@ -121,7 +121,7 @@ try { /* sign and execute */ } catch (e) {
 npm ci
 npm run type-check && npm run lint && npm test
 npm run check:deployments        # src/deployments.ts matches @meddleware/access-gate-sui
-GRPC_TESTNET=1 npm run test:integration   # live reads against public testnet
+GRPC_TESTNET=1 npm run test:integration   # live reads + ABI drift against public testnet
 ```
 
 After bumping `@meddleware/access-gate-sui`, run `npm run gen:deployments` and commit the result.
