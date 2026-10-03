@@ -22,6 +22,7 @@ import {
   commissionForPrice,
   minimumPaidPriceMist,
   gateCommissionMist,
+  toAddress,
   toU64,
 } from '../src/ptb.js'
 import type { AccessGateConfig, GateAdminContext } from '../src/types.js'
@@ -313,5 +314,33 @@ describe('u64 amounts', () => {
     const cfg = { packageId: '0x1', gateId: '0x2', platformConfigId: '0x3', nftType: '0x1::access_gate::AccessNFT' }
     expect(() => buildPurchaseTx(cfg, 2 ** 60)).toThrow(/safe integer/)
     expect(buildPurchaseTx(cfg, 2n ** 60n)).toBeTruthy()
+  })
+})
+
+describe('recipient addresses', () => {
+  const adminCtx: GateAdminContext = { packageId: '0x1', gateId: '0x2', adminCapId: '0x3', platformConfigId: '0x4' }
+
+  it('accepts only the full form, trimmed and lowercased', () => {
+    expect(toAddress(` 0x${'AB'.repeat(32)} `)).toBe(`0x${'ab'.repeat(32)}`)
+    expect(() => toAddress('0x12ab')).toThrow(/full Sui address/)
+    expect(() => toAddress(`${'a'.repeat(64)}`)).toThrow(/full Sui address/)
+    expect(() => toAddress(`0x${'g'.repeat(64)}`)).toThrow(/full Sui address/)
+  })
+
+  it('builders refuse a truncated recipient instead of zero-padding it', () => {
+    expect(() => buildSetPaymentRecipientTx(adminCtx, '0x12ab')).toThrow(/full Sui address/)
+    expect(() => buildAirdropTx(adminCtx, '0x12ab', 0n)).toThrow(/full Sui address/)
+    expect(() =>
+      buildCreateGateTx('0x1', '0x4', {
+        priceMist: 10_000_000n,
+        paymentRecipient: '0x12ab',
+        defaultUses: 0n,
+        soulbound: false,
+        autoBurnAtZero: false,
+        nftName: '',
+        nftImageUrl: '',
+        nftDescription: '',
+      }),
+    ).toThrow(/full Sui address/)
   })
 })

@@ -89,6 +89,7 @@ export {
   commissionForPrice,
   minimumPaidPriceMist,
   gateCommissionMist,
+  toAddress,
   toU64,
   buildPurchaseTx,
   buildConsumeTx,

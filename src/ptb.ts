@@ -27,6 +27,19 @@ export function toU64(v: bigint | number): bigint {
   return n
 }
 
+/**
+ * A recipient address in its full form, lowercased. `tx.pure.address` zero-pads short hex, so a
+ * truncated paste (`0x12ab`) would silently become a different, unowned address; only `0x`
+ * followed by 64 hex digits is accepted.
+ *
+ * @throws {Error} if `value` is not a full Sui address.
+ */
+export function toAddress(value: string): string {
+  const v = value.trim()
+  if (!/^0x[0-9a-fA-F]{64}$/.test(v)) throw new Error(`not a full Sui address (0x followed by 64 hex digits): ${value}`)
+  return v.toLowerCase()
+}
+
 /** The single result of a command that returns exactly one value. */
 function only(result: TransactionResult): TransactionResult[number] {
   const [first] = result
@@ -123,7 +136,7 @@ export function buildCreateGateTx(
     ],
   }))
   const tail = [
-    tx.pure.address(opts.paymentRecipient),
+    tx.pure.address(toAddress(opts.paymentRecipient)),
     tx.pure.u64(toU64(opts.defaultUses)),
     tx.pure.bool(opts.soulbound),
     tx.pure.bool(opts.autoBurnAtZero),
@@ -197,7 +210,7 @@ export function buildMakeGateFreeTx(ctx: GateAdminContext, feeMist: bigint | num
 
 /** Redirect future purchase payments to a new recipient address. */
 export function buildSetPaymentRecipientTx(ctx: GateAdminContext, recipient: string): Transaction {
-  return buildGateAdminCall(ctx, 'set_payment_recipient', (tx) => [tx.pure.address(recipient)])
+  return buildGateAdminCall(ctx, 'set_payment_recipient', (tx) => [tx.pure.address(toAddress(recipient))])
 }
 
 /** Pause or unpause `purchase` (paused ⇒ `purchase` aborts with `E_PAUSED`). */
@@ -254,7 +267,7 @@ export function buildAirdropTx(
       tx.object(ctx.gateId),
       tx.object(ctx.platformConfigId),
       payment,
-      tx.pure.address(recipient),
+      tx.pure.address(toAddress(recipient)),
     ],
   })
   return tx

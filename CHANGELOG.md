@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.4] - 2026-10-03
+
+### Fixed
+
+- **Recipient addresses must be complete.** `buildCreateGateTx` (`paymentRecipient`),
+  `buildSetPaymentRecipientTx` and `buildAirdropTx` refuse anything but `0x` followed by 64 hex
+  digits. `tx.pure.address` zero-pads short hex, so a truncated paste was encoded as a different,
+  unowned address. New export `toAddress`.
+
 ## [0.0.3] - 2026-10-02
 
 ### Changed
