@@ -28,10 +28,12 @@ describe.skipIf(!RUN)('gRPC read path (real testnet full node)', () => {
     expect(config.minCommissionMist).toBeGreaterThan(0n)
   })
 
-  it('lists and decodes access_gate events across the module filter, newest first', async () => {
+  it('lists and decodes access_gate events across the module filter, newest first', async (ctx) => {
     const page = await listAccessGateEvents(any, { originalId, limit: 20 })
     expect(page.source).toBe('rpc')
-    expect(page.events.length).toBeGreaterThan(0)
+    // Public full nodes prune events after a few days (this is why sui-indexer exists), so a quiet
+    // package can legitimately have none left. Decoding and ordering are checked whenever there are some.
+    if (page.events.length === 0) ctx.skip()
     const checkpoints = page.events.map((e) => BigInt(e.checkpoint ?? '0'))
     for (let i = 1; i < checkpoints.length; i++) expect(checkpoints[i]).toBeLessThanOrEqual(checkpoints[i - 1]!)
     for (const e of page.events) expect(e.txDigest).toBeTruthy()
