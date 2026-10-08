@@ -38,6 +38,9 @@ gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
     `@meddleware/access-gate-sui`'s `Published.toml` and `deployments.json`.
   - Never edit it by hand. CI runs `check:deployments`.
   - No other file holds a package or object id.
+- **Authorisation role.** `ownsAccessNft` (with `isUsablePass`) is used to AUTHORISE (the nft-gate Worker,
+  seal-ui). They count only usable passes and fail closed on an unknown variant; indexer data is never
+  an input.
 - **Abort table.**
   - `ACCESS_GATE_ABORTS` mirrors the `E_*` constants in `access_gate.move` (codes 1–14).
   - Every builder that touches a gate or consumes passes `platformConfigId` (the on-chain version gate).
@@ -54,7 +57,10 @@ gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
 - **`GRPC_TESTNET=1 npm run test:integration`** — live reads against public testnet, using the
   recorded deployment, plus the ABI-drift check: every Move call in the ABI table must exist on
   `publishedAt` (public or entry, same type-parameter and parameter counts, trailing `TxContext`
-  excluded), and `publishedAt` must be the package's latest version.
+  excluded) **and the same reference kind and type per parameter** (`EXPECTED_PARAMS` in
+  `tests/abi-table.ts`), and `publishedAt` must be the package's latest version.
+  `schema-drift.integration.test.ts` compares every struct the parsers read with `tests/schema.ts` and
+  decodes a real event of each kind. A weekly workflow (`live-read.yml`) runs both without secrets.
 
 ---
 

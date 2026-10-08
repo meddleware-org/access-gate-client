@@ -23,9 +23,9 @@ describe('abortMessage', () => {
     const sim = Object.assign(new Error('sim failed'), {
       executionError: { MoveAbort: { abortCode: '11', location: { package: PKG, module: 'access_gate' } } },
     })
-    expect(abortMessage(sim)).toBe(ACCESS_GATE_ABORTS[11]!.message)
+    expect(abortMessage(sim, PKG)).toBe(ACCESS_GATE_ABORTS[11]!.message)
     const status = { success: false, error: { MoveAbort: { abortCode: '4', location: { package: PKG, module: 'access_gate' } } } }
-    expect(abortMessage(status)).toBe(ACCESS_GATE_ABORTS[4]!.message)
+    expect(abortMessage(status, PKG)).toBe(ACCESS_GATE_ABORTS[4]!.message)
   })
 
   it('reads the SDK message format', () => {
@@ -39,14 +39,31 @@ describe('abortMessage', () => {
   })
 
   it('ignores aborts from other modules or packages, and errors without an abort', () => {
-    expect(abortMessage({ MoveAbort: { abortCode: '1', location: { package: PKG, module: 'seal_policies' } } })).toBeNull()
+    expect(abortMessage({ MoveAbort: { abortCode: '1', location: { package: PKG, module: 'seal_policies' } } }, PKG)).toBeNull()
     expect(abortMessage({ MoveAbort: { abortCode: '1', location: { package: '0x2', module: 'access_gate' } } }, PKG)).toBeNull()
-    expect(abortMessage({ MoveAbort: { abortCode: '1' } })).toBeNull()
-    expect(abortMessage(new Error('network down'))).toBeNull()
-    expect(abortMessage(undefined)).toBeNull()
+    expect(abortMessage({ MoveAbort: { abortCode: '1' } }, PKG)).toBeNull()
+    expect(abortMessage(new Error('network down'), PKG)).toBeNull()
+    expect(abortMessage(undefined, PKG)).toBeNull()
   })
 
   it('returns null for an unknown code', () => {
-    expect(abortMessage({ MoveAbort: { abortCode: '99', location: { package: PKG, module: 'access_gate' } } })).toBeNull()
+    expect(abortMessage({ MoveAbort: { abortCode: '99', location: { package: PKG, module: 'access_gate' } } }, PKG)).toBeNull()
+  })
+
+  it('does not claim a look-alike or superseded package\'s access_gate abort', () => {
+    const other = '0x' + 'bb'.repeat(32)
+    expect(abortMessage({ MoveAbort: { abortCode: '13', location: { package: other, module: 'access_gate' } } }, PKG)).toBeNull()
+  })
+
+  it('survives a cyclic error chain', () => {
+    const a: Record<string, unknown> = {}
+    const b: Record<string, unknown> = { error: a }
+    a.error = b
+    expect(abortMessage(a, PKG)).toBeNull()
+  })
+
+  it('still finds an abort wrapped a few levels deep', () => {
+    const inner = { MoveAbort: { abortCode: '2', location: { package: PKG, module: 'access_gate' } } }
+    expect(abortMessage({ error: { error: { error: inner } } }, PKG)).toBe(ACCESS_GATE_ABORTS[2]!.message)
   })
 })

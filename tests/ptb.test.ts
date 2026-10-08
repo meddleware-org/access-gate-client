@@ -42,9 +42,29 @@ const cfg: AccessGateConfig = {
   soulbound: false,
 }
 
+const SOULBOUND_TYPE = `${PKG}::access_gate::SoulboundAccessNFT`
+
 function commandsJson(tx: { getData: () => unknown }): string {
   return JSON.stringify(tx.getData())
 }
+
+describe('commission helpers at the extremes', () => {
+  const terms = { bps: 100n, minMist: 5n }
+
+  it('minimumPaidPriceMist saturates at u64::MAX like the contract', () => {
+    expect(minimumPaidPriceMist((1n << 64n) - 1n)).toBe((1n << 64n) - 1n)
+    expect(minimumPaidPriceMist(0n)).toBe(1n)
+    expect(minimumPaidPriceMist(1n)).toBe(10n)
+  })
+
+  it('refuses unsafe numbers and out-of-range values instead of previewing a different amount', () => {
+    expect(() => commissionForPrice(2 ** 60, terms)).toThrow(RangeError)
+    expect(() => minimumPaidPriceMist(2 ** 60)).toThrow(RangeError)
+    expect(() => commissionForPrice(-1n, terms)).toThrow(RangeError)
+    expect(() => commissionForPrice(1n << 64n, terms)).toThrow(RangeError)
+    expect(commissionForPrice(10n ** 18n, terms)).toBe(10n ** 16n)
+  })
+})
 
 describe('ptb builders', () => {
   it('buildPurchaseTx targets access_gate::purchase and splits gas', () => {
@@ -58,13 +78,29 @@ describe('ptb builders', () => {
   })
 
   it('buildConsumeTx targets consume for transferable gates', () => {
-    const json = commandsJson(buildConsumeTx(cfg, NFT, 'nonce-1'))
+    const json = commandsJson(buildConsumeTx(cfg, NFT, 'nonce-12345'))
     expect(json).toContain('"function":"consume"')
     expect(json).not.toContain('consume_soulbound')
   })
 
+  it('buildConsumeTx derives the function from nftType, and refuses a disagreeing soulbound flag', () => {
+    const { soulbound: _unused, ...bare } = cfg
+    expect(commandsJson(buildConsumeTx({ ...bare, nftType: SOULBOUND_TYPE }, NFT, 'nonce-12345'))).toContain('"function":"consume_soulbound"')
+    expect(commandsJson(buildConsumeTx(bare, NFT, 'nonce-12345'))).toContain('"function":"consume"')
+    expect(() => buildConsumeTx({ ...cfg, nftType: SOULBOUND_TYPE, soulbound: false }, NFT, 'nonce-12345')).toThrow(/disagrees/)
+    expect(() => buildConsumeTx({ ...cfg, soulbound: true }, NFT, 'nonce-12345')).toThrow(/disagrees/)
+    expect(() => buildConsumeTx({ ...cfg, nftType: '0x2::coin::Coin' }, NFT, 'nonce-12345')).toThrow(/not an access_gate NFT type/)
+  })
+
+  it('buildConsumeTx refuses a nonce the contract would reject, before any signature', () => {
+    expect(() => buildConsumeTx(cfg, NFT, 'short')).toThrow(/at least 8 bytes/)
+    expect(() => buildConsumeTx(cfg, NFT, '')).toThrow(/at least 8 bytes/)
+    expect(() => buildConsumeTx(cfg, NFT, 'éé')).toThrow(/at least 8 bytes/) // 4 UTF-8 bytes
+    expect(commandsJson(buildConsumeTx(cfg, NFT, '12345678'))).toContain('"function":"consume"')
+  })
+
   it('buildConsumeTx targets consume_soulbound for soulbound gates', () => {
-    const json = commandsJson(buildConsumeTx({ ...cfg, soulbound: true }, NFT, 'nonce-1'))
+    const json = commandsJson(buildConsumeTx({ ...cfg, nftType: SOULBOUND_TYPE, soulbound: true }, NFT, 'nonce-12345'))
     expect(json).toContain('"function":"consume_soulbound"')
   })
 
@@ -223,9 +259,9 @@ describe('ptb builders — exact arguments', () => {
   })
 
   it('consume(nft, gate, platformConfig, nonce bytes) and the soulbound variant', () => {
-    const expected = [`obj:${NFT}`, `obj:${GATE}`, `obj:${PLATFORM}`, bytes('nonce-1')]
-    expect(callArgs(buildConsumeTx(cfg, NFT, 'nonce-1'), 'consume')).toEqual(expected)
-    expect(callArgs(buildConsumeTx({ ...cfg, soulbound: true }, NFT, 'nonce-1'), 'consume_soulbound')).toEqual(expected)
+    const expected = [`obj:${NFT}`, `obj:${GATE}`, `obj:${PLATFORM}`, bytes('nonce-12345')]
+    expect(callArgs(buildConsumeTx(cfg, NFT, 'nonce-12345'), 'consume')).toEqual(expected)
+    expect(callArgs(buildConsumeTx({ ...cfg, nftType: SOULBOUND_TYPE, soulbound: true }, NFT, 'nonce-12345'), 'consume_soulbound')).toEqual(expected)
   })
 
   it('create_gate(platform, price, recipient, uses, soulbound, autoBurn, name, image, description, policy)', () => {

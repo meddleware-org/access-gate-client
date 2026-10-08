@@ -110,6 +110,8 @@ try { /* sign and execute */ } catch (e) {
 }
 ```
 
+- Always pass `originalId`: without it any package's `access_gate` abort would get a message (a look-alike, or a
+  superseded package whose codes 13 and 14 meant something else), so `abortMessage` now requires it.
 - `abortMessage` finds an `access_gate` abort in an SDK `ExecutionError`, a `SimulationError`, a
   failed transaction's status, or error text from the SDK or a wallet.
 - It returns the user-facing message for codes 1–14 (`ACCESS_GATE_ABORTS`); 13 (`E_WRONG_VERSION`)

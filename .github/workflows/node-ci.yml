@@ -4,6 +4,8 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  # The release workflow runs the same checks on the tagged commit.
+  workflow_call:
 
 permissions:
   contents: read
@@ -35,7 +37,21 @@ jobs:
         run: npm run type-check
 
       - name: Lint JS (eslint)
-        run: npm run lint:js --if-present
+        run: npm run lint
 
       - name: Test
         run: npm test
+
+      - name: Build declarations
+        run: npm run build
+
+      - name: Package contents
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e "
+            const [p] = JSON.parse(require('fs').readFileSync('pack.json', 'utf8'))
+            const files = p.files.map((f) => f.path)
+            for (const f of ['src/index.ts', 'dist/index.d.ts', 'src/deployments.ts', 'package.json']) if (!files.includes(f)) { console.error('missing from the tarball:', f); process.exit(1) }
+            const stray = files.filter((f) => !/^(src\\/|dist\\/|package\\.json\$|LICENSE\$|README\\.md\$|CHANGELOG\\.md\$|SECURITY\\.md\$)/.test(f))
+            if (stray.length) { console.error('unexpected files in the tarball:', stray); process.exit(1) }
+          "

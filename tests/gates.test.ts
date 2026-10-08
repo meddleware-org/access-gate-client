@@ -7,6 +7,7 @@ import {
   fetchAdminCaps,
   fetchGate,
   fetchOwnedGates,
+  GATE_FETCH_CONCURRENCY,
   ownsPlatformAdminCap,
 } from '../src/gates.js'
 import type { CoreObject, OwnedObjectsClient, SuiObjectClient } from '../src/types.js'
@@ -206,6 +207,29 @@ describe('gate discovery (gRPC core API)', () => {
     expect(b.adminCapId).toBe(CAP_B)
     expect(b.paused).toBe(true)
     expect(b.frozen).toBe(true)
+  })
+
+  it('fetchOwnedGates reads gates with bounded concurrency and keeps the cap order', async () => {
+    const caps = Array.from({ length: 60 }, (_, i) => capObj(id(`c${i.toString(16)}`), id(`a${i.toString(16)}`)))
+    let inFlight = 0
+    let peak = 0
+    const client: OwnedObjectsClient & SuiObjectClient = {
+      core: {
+        listOwnedObjects: vi.fn(async () => ({ objects: caps, hasNextPage: false, cursor: null })),
+        getObject: vi.fn(async ({ objectId }: { objectId: string }) => {
+          inFlight++
+          peak = Math.max(peak, inFlight)
+          await new Promise((r) => setTimeout(r, 2))
+          inFlight--
+          return { object: gateObj(objectId) }
+        }),
+      },
+    }
+    const gates = await fetchOwnedGates(client, '0xowner', PKG)
+    expect(gates).toHaveLength(60)
+    expect(gates.map((g) => g.gateId)).toEqual(caps.map((c) => (c.json as { gate_id: string }).gate_id))
+    expect(peak).toBeLessThanOrEqual(GATE_FETCH_CONCURRENCY)
+    expect(peak).toBeGreaterThan(1)
   })
 
   it('fetchOwnedGates skips a cap whose gate id is not a Gate', async () => {

@@ -28,6 +28,9 @@ export const ACCESS_GATE_ABORTS: Readonly<Record<number, AccessGateAbort>> = Obj
   14: { name: 'E_NOT_UPGRADE', message: 'The platform is already at this contract version.' },
 })
 
+/** How deep `findAbort` follows `.error` wrappers (a two-object cycle must not overflow the stack). */
+const MAX_ERROR_DEPTH = 8
+
 /** Where an abort came from, as far as the error shows. */
 interface AbortSite {
   code: number
@@ -40,7 +43,8 @@ interface AbortSite {
  * Find a Move abort in `error`: an SDK `ExecutionError` / `SimulationError`, a failed
  * transaction's status, or error text in the SDK's or a wallet's format.
  */
-function findAbort(error: unknown): AbortSite | null {
+function findAbort(error: unknown, depth = 0): AbortSite | null {
+  if (depth > MAX_ERROR_DEPTH) return null // a cyclic or absurdly nested `.error` chain
   if (error && typeof error === 'object') {
     const o = error as Record<string, unknown>
     const abort = (o.MoveAbort ?? (o.executionError as Record<string, unknown> | undefined)?.MoveAbort) as
@@ -57,7 +61,7 @@ function findAbort(error: unknown): AbortSite | null {
       }
     }
     if (o.error !== undefined && o.error !== error) {
-      const nested = findAbort(o.error)
+      const nested = findAbort(o.error, depth + 1)
       if (nested) return nested
     }
   }
@@ -79,13 +83,14 @@ function findAbort(error: unknown): AbortSite | null {
 
 /**
  * The user-facing message for an `access_gate` abort in `error`, or `null` if it holds none.
- * Only aborts located in the `access_gate` module count, and with `originalId`, only in that
- * package (modules keep their original id across upgrades). An abort whose location the error does
- * not show is not claimed.
+ * Only aborts located in the `access_gate` module of **this** package count (`originalId`: modules keep
+ * their original id across upgrades). Without it, any package's `access_gate` would be claimed — a look-alike,
+ * or a superseded package whose codes 13 and 14 meant something else. An abort whose location the error
+ * does not show is not claimed.
  */
-export function abortMessage(error: unknown, originalId?: string): string | null {
+export function abortMessage(error: unknown, originalId: string): string | null {
   const site = findAbort(error)
   if (!site || site.module !== ACCESS_GATE_MODULE) return null
-  if (originalId && site.package !== normalizeSuiAddress(originalId)) return null
+  if (site.package !== normalizeSuiAddress(originalId)) return null
   return ACCESS_GATE_ABORTS[site.code]?.message ?? null
 }

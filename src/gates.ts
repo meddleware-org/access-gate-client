@@ -141,6 +141,23 @@ export async function fetchPlatformConfig(
   return config
 }
 
+/** How many `Gate` reads `fetchOwnedGates` keeps in flight. */
+export const GATE_FETCH_CONCURRENCY = 10
+
+/** `items.map(fn)` with at most `limit` calls in flight; results keep the input order. */
+async function mapBounded<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++
+      out[i] = await fn(items[i]!)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return out
+}
+
 /**
  * Every gate `owner` administers: their `AdminCap`s, each merged with its `Gate`. Caps whose gate
  * is not a `Gate` of this package are skipped.
@@ -153,12 +170,12 @@ export async function fetchOwnedGates(
   originalId: string,
 ): Promise<OwnedGate[]> {
   const caps = await fetchAdminCaps(client, owner, originalId)
-  const gates = await Promise.all(
-    caps.map(async ({ adminCapId, gateId }) => {
-      const gate = await fetchGate(client, gateId, originalId)
-      return gate ? { ...gate, adminCapId } : null
-    }),
-  )
+  // A bounded number of requests at a time: an operator with thousands of caps must not fire thousands of
+  // concurrent reads at a public full node (rate limiting would reject the whole call).
+  const gates = await mapBounded(caps, GATE_FETCH_CONCURRENCY, async ({ adminCapId, gateId }) => {
+    const gate = await fetchGate(client, gateId, originalId)
+    return gate ? { ...gate, adminCapId } : null
+  })
   return gates.filter((g): g is OwnedGate => g !== null)
 }
 

@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | npm name | `@meddleware/access-gate-client` |
-| Version | `0.0.1` |
+| Version | see `package.json` |
 | Licence | 0BSD |
 | Type | TypeScript source package (declaration-only build) |
 | Runtime targets | Node.js ≥ 22, browsers (via Vite), Cloudflare Workers |

@@ -1,6 +1,6 @@
 {
   "name": "@meddleware/access-gate-client",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "homepage": "https://docs.meddleware.co.uk/blockchain/sui/access-gate/",
   "type": "module",
   "description": "Client for the access_gate Move package: typed reads, events, transaction builders, abort messages and deployment ids.",
@@ -20,7 +20,8 @@
   "files": [
     "src",
     "dist",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "SECURITY.md"
   ],
   "sideEffects": false,
   "exports": {

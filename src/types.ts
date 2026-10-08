@@ -9,7 +9,7 @@ export interface AccessGateConfig {
   packageId: string
   /** The shared `Gate` object ID. */
   gateId: string
-  /** The shared `PlatformConfig` object ID. Required for `buildPurchaseTx`. */
+  /** The shared `PlatformConfig` object ID (the version gate): read by purchase and consume. */
   platformConfigId: string
   /**
    * Fully-qualified NFT type to filter ownership by, under the package's **original id**:
@@ -17,7 +17,10 @@ export interface AccessGateConfig {
    * Choose the variant matching the gate's `soulbound` flag.
    */
   nftType: string
-  /** Whether this gate mints soulbound NFTs (selects `consume` vs `consume_soulbound`). */
+  /**
+   * Optional cross-check: whether this gate mints soulbound NFTs. `consume` vs `consume_soulbound` is
+   * derived from `nftType`; if this is set and disagrees, `buildConsumeTx` throws.
+   */
   soulbound?: boolean
 }
 

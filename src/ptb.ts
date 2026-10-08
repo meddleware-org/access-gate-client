@@ -1,5 +1,7 @@
 import { Transaction } from '@mysten/sui/transactions'
+import { parseStructTag } from '@mysten/sui/utils'
 import type { TransactionResult } from '@mysten/sui/transactions'
+import { normalizeAccessNftType } from './typeNames.js'
 import type { AccessGateConfig, CommissionTerms, GateAdminContext, GatePolicy, OwnedGate, PlatformConfigInfo } from './types.js'
 
 /** The unrestricted policy — every restriction off (`default_gate_policy` on-chain). */
@@ -77,9 +79,27 @@ export function buildPurchaseTx(cfg: AccessGateConfig, priceMist: bigint | numbe
   return tx
 }
 
+/** The contract's `MIN_NONCE_LENGTH`: a shorter nonce aborts `consume` with `E_INVALID_NONCE` (8). */
+export const MIN_NONCE_BYTES = 8
+
 /**
- * Build a PTB that consumes one use of a single-use NFT, binding it to `nonce`. Selects
- * `consume` or `consume_soulbound` from `cfg.soulbound`. For unlimited passes there is
+ * `consume` or `consume_soulbound`, derived from `cfg.nftType`. `cfg.soulbound`, when set, must agree:
+ * a soulbound `nftType` with `soulbound` unset used to build the transferable `consume`, which aborts
+ * on-chain after the user has paid.
+ *
+ * @throws {Error} if `nftType` is not an access NFT type, or `soulbound` disagrees with it.
+ */
+function consumeFunction(cfg: AccessGateConfig): 'consume' | 'consume_soulbound' {
+  const soulboundType = parseStructTag(normalizeAccessNftType(cfg.nftType)).name === 'SoulboundAccessNFT'
+  if (cfg.soulbound !== undefined && cfg.soulbound !== soulboundType) {
+    throw new Error(`cfg.soulbound (${cfg.soulbound}) disagrees with cfg.nftType (${cfg.nftType})`)
+  }
+  return soulboundType ? 'consume_soulbound' : 'consume'
+}
+
+/**
+ * Build a PTB that consumes one use of a single-use NFT, binding it to `nonce` (at least
+ * {@link MIN_NONCE_BYTES} bytes). Selects `consume` or `consume_soulbound` from `cfg.nftType`. For unlimited passes there is
  * nothing to consume — do not call this. Reads the shared `PlatformConfig` (version gate).
  */
 export function buildConsumeTx(
@@ -88,8 +108,12 @@ export function buildConsumeTx(
   nonce: string,
 ): Transaction {
   const tx = new Transaction()
-  const fn = cfg.soulbound ? 'consume_soulbound' : 'consume'
+  const fn = consumeFunction(cfg)
   const nonceBytes = Array.from(new TextEncoder().encode(nonce))
+  // The contract aborts with E_INVALID_NONCE after the user has signed and paid gas; refuse before the prompt.
+  if (nonceBytes.length < MIN_NONCE_BYTES) {
+    throw new RangeError(`nonce must be at least ${MIN_NONCE_BYTES} bytes (got ${nonceBytes.length})`)
+  }
   tx.moveCall({
     target: `${cfg.packageId}::access_gate::${fn}`,
     arguments: [tx.object(nftId), tx.object(cfg.gateId), tx.object(cfg.platformConfigId), tx.pure.vector('u8', nonceBytes)],
@@ -310,7 +334,7 @@ export function platformCommissionTerms(platform: PlatformConfigInfo): Commissio
  * 0 for a price of 0.
  */
 export function commissionForPrice(priceMist: bigint | number, terms: CommissionTerms): bigint {
-  const price = BigInt(priceMist)
+  const price = toU64(priceMist)
   if (price === 0n) return 0n
   const share = (price * terms.bps) / BPS_DENOMINATOR
   const cap = (price * MAX_COMMISSION_BPS) / BPS_DENOMINATOR
@@ -323,7 +347,9 @@ export function commissionForPrice(priceMist: bigint | number, terms: Commission
  * commission, so the floor never exceeds the 10% cap; at least 1 MIST.
  */
 export function minimumPaidPriceMist(minCommissionMist: bigint | number): bigint {
-  const min = (BigInt(minCommissionMist) * BPS_DENOMINATOR + MAX_COMMISSION_BPS - 1n) / MAX_COMMISSION_BPS
+  const min = (toU64(minCommissionMist) * BPS_DENOMINATOR + MAX_COMMISSION_BPS - 1n) / MAX_COMMISSION_BPS
+  // Saturates at u64::MAX like the contract's `min_paid_price_mist`.
+  if (min > MAX_U64) return MAX_U64
   return min === 0n ? 1n : min
 }
 

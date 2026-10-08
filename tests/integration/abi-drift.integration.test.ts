@@ -7,7 +7,8 @@ import { describe, it, expect } from 'vitest'
 import { SuiGrpcClient } from '@mysten/sui/grpc'
 import { normalizeStructTag } from '@mysten/sui/utils'
 import { accessGateDeployment } from '../../src/deployments.js'
-import { allMoveCalls, PKG } from '../abi-table.js'
+import { allMoveCalls, EXPECTED_PARAMS, PKG } from '../abi-table.js'
+import { paramType } from '../chain-shape.js'
 
 const RUN = !!process.env.GRPC_TESTNET
 const BASE_URL = process.env.GRPC_TESTNET_URL || 'https://fullnode.testnet.sui.io:443'
@@ -44,6 +45,9 @@ describe.skipIf(!RUN)('ABI drift (real testnet package)', () => {
       expect(fn.typeParameters.length).toBe(call.typeArguments)
       const params = fn.parameters.filter((p, i) => !(i === fn.parameters.length - 1 && isTxContext(p)))
       expect(params.length).toBe(call.arguments)
+      // Reference kind and type per position: a reordered or retyped parameter of the same arity fails here.
+      const expected = EXPECTED_PARAMS[`${call.module}::${call.function}`]
+      expect(params.map((p) => paramType(p as never, originalId))).toEqual(expected)
     })
   }
 })

@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.7] - 2026-10-08
+
+### Fixed
+
+- `buildConsumeTx` refuses a nonce shorter than 8 bytes (the contract's `MIN_NONCE_LENGTH`; it used to abort
+  with `E_INVALID_NONCE` after the user had signed and paid) and derives `consume` vs `consume_soulbound`
+  from `cfg.nftType`. `cfg.soulbound`, when set, is only a cross-check and throws if it disagrees; a
+  soulbound `nftType` with `soulbound` unset used to build the transferable `consume`, which aborts.
+- `minimumPaidPriceMist` saturates at u64::MAX like `min_paid_price_mist`; it and `commissionForPrice` route
+  their inputs through `toU64`, so an unsafe number or out-of-range value throws instead of previewing a
+  different amount.
+- `fetchOwnedGates` reads gates with at most 10 requests in flight (an operator with thousands of caps used to
+  fire thousands at a public full node).
+- **Breaking (pre-v0.2):** `abortMessage(error, originalId)` requires `originalId`. Without it any package's
+  `access_gate` abort was claimed. The error-chain walk is bounded (a two-object cycle overflowed the stack).
+
+### Added
+
+- Drift checks against the chain (weekly, read-only, no secrets): every struct the parsers decode or read has
+  exactly the recorded fields (`tests/schema.ts`), a real event of each kind decodes strictly, and every
+  builder's Move function has the recorded reference kind and type per parameter (`EXPECTED_PARAMS`), not just
+  the same arity. Offline, a schema-driven encoder (independent of `src/events.ts`) must round-trip through the
+  real parsers, trailing bytes included, and each builder's pure/object argument kinds must match.
+
+### Changed
+
+- CI builds the declarations, checks the tarball's file list and runs lint without `--if-present`; the tag
+  workflow runs the same workflow as CI (lint and the build were missing there). `SECURITY.md` ships in the
+  package.
+- Documentation: the version table, `platformConfigId` (read by purchase and consume, not only purchase) and
+  `abortMessage`.
+
 ## [0.0.6] - 2026-10-08
 
 ### Changed
