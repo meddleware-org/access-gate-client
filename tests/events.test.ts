@@ -167,6 +167,13 @@ describe('parseAccessGateEvent', () => {
     expect(parseAccessGateEvent(row, PKG)?.kind).toBe('AccessMinted')
   })
 
+  it('rejects trailing bytes: a field appended by a later upgrade must not decode silently', () => {
+    const e = mintedEntry(GATE_A)
+    const longer = new Uint8Array([...(e.bcs as Uint8Array), 1, 2, 3])
+    expect(() => parseAccessGateEvent({ ...e, bcs: longer }, PKG)).toThrow(/layout/)
+    expect(() => parseAccessGateEvent({ ...e, bcs: (e.bcs as Uint8Array).slice(0, -1) }, PKG)).toThrow()
+  })
+
   it('does not treat Object prototype keys as event names', () => {
     const e = mintedEntry(GATE_A)
     for (const name of ['constructor', 'toString', 'hasOwnProperty']) {
@@ -313,6 +320,40 @@ describe('listAccessGateEvents (indexer)', () => {
   })
 })
 
+describe('indexer rows are untrusted (display-only)', () => {
+  const INDEXER = 'https://indexer.example'
+  const row = (e: CoreEventEntry) => ({ ...e, bcs: toBase64(e.bcs as Uint8Array) })
+
+  it('skips and counts malformed or undecodable rows instead of failing the page', async () => {
+    const good = row(mintedEntry(GATE_A))
+    const rows = [
+      good,
+      { ...good, sender: undefined }, // no sender
+      { ...good, eventIndex: 'x' }, // mistyped origin field
+      { ...good, transactionDigest: 5 },
+      { ...good, bcs: 'not base64 !!' },
+      { ...good, bcs: toBase64(new Uint8Array([1, 2, 3])) }, // undecodable
+      null,
+      'junk',
+    ]
+    const fetchFn = vi.fn(async () => Response.json({ events: rows, cursor: 'c2' }))
+    const page = await listAccessGateEvents(eventsClient([[]]), {
+      originalId: PKG,
+      indexer: { url: INDEXER, network: 'testnet', fetch: fetchFn as unknown as typeof fetch },
+      cursor: { source: 'indexer', value: 'c1' },
+    })
+    expect(page.events).toHaveLength(1)
+    expect(page.invalidRows).toBe(rows.length - 1)
+    expect(page.cursor).toEqual({ source: 'indexer', value: 'c2' }) // pagination survives
+  })
+
+  it('full-node rows keep throwing: that is real layout drift', async () => {
+    const e = mintedEntry(GATE_A)
+    const client = eventsClient([[{ ...e, bcs: new Uint8Array([1]) }]])
+    await expect(listAccessGateEvents(client, { originalId: PKG })).rejects.toThrow()
+  })
+})
+
 describe('readIndexerEvents (shared indexer reader)', () => {
   const respond = (body: string, status = 200) => vi.fn(async () => new Response(body, { status }))
   const source = (url: string, fetchFn: ReturnType<typeof vi.fn>) => ({ url, network: 'testnet', fetch: fetchFn as unknown as typeof fetch })
@@ -328,6 +369,31 @@ describe('readIndexerEvents (shared indexer reader)', () => {
     const fetchFn = respond(JSON.stringify({ events: [], cursor: null }))
     await expect(readIndexerEvents(source('http://idx.example', fetchFn), 'v1', {})).rejects.toThrow(/https/)
     await expect(readIndexerEvents(source('http://127.0.0.1:8080', fetchFn), 'v1', {})).resolves.toMatchObject({ events: [] })
+  })
+
+  it('refuses a path that leaves the indexer origin, and redirects', async () => {
+    const fetchFn = respond(JSON.stringify({ events: [], cursor: null }))
+    for (const path of ['//evil.example/x', 'https://evil.example/x', '/abs', 'http:foo', 'a\\b']) {
+      await expect(readIndexerEvents(source('https://idx.example', fetchFn), path, {})).rejects.toThrow(/relative|origin/)
+    }
+    expect(fetchFn).not.toHaveBeenCalled()
+    await readIndexerEvents(source('https://idx.example', fetchFn), 'v1/x', {})
+    const init = (fetchFn.mock.calls[0] as unknown as [unknown, RequestInit])[1]
+    expect(init.redirect).toBe('error')
+    expect(init.cache).toBe('no-store')
+  })
+
+  it('caps the body by bytes while streaming, even without a Content-Length', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      pull(c) {
+        c.enqueue(new Uint8Array(1 << 18))
+      },
+    })
+    const fetchFn = vi.fn(async () => new Response(stream, { status: 200 }))
+    await expect(readIndexerEvents(source('https://idx.example', fetchFn), 'v1', {})).rejects.toThrow(/too large/)
+    // Multi-byte text is counted in bytes, not UTF-16 units.
+    const wide = respond(JSON.stringify({ events: [], cursor: null, pad: '€'.repeat(400_000) }))
+    await expect(readIndexerEvents(source('https://idx.example', wide), 'v1', {})).rejects.toThrow(/too large/)
   })
 
   it('rejects oversized, non-JSON and mis-shaped bodies', async () => {

@@ -72,8 +72,10 @@ function parsePolicy(v: unknown): GatePolicy | null {
  * (`{ vec: [] | [struct] }`): the terms, `null` for none, or `undefined` if malformed.
  */
 function parseOptionTerms(v: unknown): CommissionTerms | null | undefined {
-  if (v === null || v === undefined) return null
-  if (typeof v !== 'object') return undefined
+  // `Option::none` renders as `null`; a missing key means the field was dropped or renamed, which is
+  // malformed (never "no lock").
+  if (v === null) return null
+  if (v === undefined || typeof v !== 'object') return undefined
   const vec = (v as { vec?: unknown }).vec
   if (Array.isArray(vec) && vec.length === 0) return null
   const t = structFields(Array.isArray(vec) ? vec[0] : v)

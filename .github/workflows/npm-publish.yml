@@ -24,6 +24,8 @@ jobs:
           node-version: '24'
       - name: Install dependencies
         run: npm ci
+      - name: Dependency tree is valid (peer ranges satisfied)
+        run: npm ls --all >/dev/null
       - name: Audit dependencies
         run: npm audit --audit-level=high
       - name: Deployment ids match @meddleware/access-gate-sui

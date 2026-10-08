@@ -126,6 +126,13 @@ export function parseAccessGateEvent(entry: CoreEventEntry, originalId: string):
   const name = type.slice(prefix.length)
   if (!Object.hasOwn(LAYOUTS, name)) return null
   const bytes = typeof entry.bcs === 'string' ? fromBase64(entry.bcs) : entry.bcs
+  // `@mysten/bcs` ignores trailing bytes, so a field appended by a later upgrade would decode
+  // silently and be lost. A strict decode re-serialises and compares: any difference is drift.
+  const layout = LAYOUTS[name as keyof typeof LAYOUTS] as { parse(b: Uint8Array): unknown; serialize(v: never): { toBytes(): Uint8Array } }
+  const reencoded = layout.serialize(layout.parse(bytes) as never).toBytes()
+  if (reencoded.length !== bytes.length || reencoded.some((b, i) => b !== bytes[i])) {
+    throw new Error(`${name} bytes do not match the expected layout (the access_gate event changed?)`)
+  }
   const origin = {
     txDigest: entry.transactionDigest,
     eventIndex: entry.eventIndex,
@@ -277,6 +284,8 @@ export interface AccessGateEventPage {
   indexedFromCheckpoint?: string
   /** Why the indexer was skipped, when a first page fell back to the full node. */
   indexerError?: string
+  /** Indexer rows skipped because they were malformed or undecodable (display-only data). */
+  invalidRows?: number
 }
 
 /** Page size the public full nodes cap `listEvents` at. */
@@ -355,8 +364,38 @@ async function listFromRpc(
   return { events, cursor: cursor ? { source: 'rpc', value: cursor } : null, source: 'rpc' }
 }
 
-/** Longest indexer response body read (characters); a page of 100 events is far below it. */
+/** Longest indexer response body read (bytes); a page of 100 events is far below it. */
 const MAX_INDEXER_RESPONSE = 1 << 20
+
+/** Read at most {@link MAX_INDEXER_RESPONSE} bytes of `res`, cancelling the stream past the cap. */
+async function readCappedText(res: Response): Promise<string> {
+  const declared = Number(res.headers.get('content-length') ?? NaN)
+  if (Number.isFinite(declared) && declared > MAX_INDEXER_RESPONSE) {
+    await res.body?.cancel()
+    throw new Error('indexer response too large')
+  }
+  if (!res.body) return ''
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > MAX_INDEXER_RESPONSE) {
+      await reader.cancel()
+      throw new Error('indexer response too large')
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(total)
+  let at = 0
+  for (const c of chunks) {
+    bytes.set(c, at)
+    at += c.byteLength
+  }
+  return new TextDecoder().decode(bytes)
+}
 
 /** One page of indexer event rows: the full node's events, verbatim (BCS base64). */
 export interface IndexerEventsPage {
@@ -372,8 +411,12 @@ export interface IndexerEventsPage {
  * seal-client). The rows are untrusted: callers decode and type-check each one like a full-node
  * event.
  *
- * @throws {Error} if the URL is not `https:` (`http:` only for a loopback host), the request fails
- *   or times out, the status is not 2xx, or the body is oversized, not JSON or not an event page.
+ * `path` must be relative to the indexer URL (no scheme, no leading `//`), redirects are refused and
+ * the body is size-capped while it is read.
+ *
+ * @throws {Error} if the URL is not `https:` (`http:` only for a loopback host), `path` leaves the
+ *   indexer's origin, the request fails, is redirected or times out, the status is not 2xx, or the body
+ *   is oversized, not JSON or not an event page.
  */
 export async function readIndexerEvents(
   indexer: IndexerSource,
@@ -385,13 +428,23 @@ export async function readIndexerEvents(
   if (base.protocol !== 'https:' && !(base.protocol === 'http:' && loopback)) {
     throw new Error(`indexer URL must use https: ${indexer.url}`)
   }
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(path) || path.startsWith('/') || path.includes('\\')) {
+    throw new Error('indexer path must be relative to the indexer URL')
+  }
   const url = new URL(path, base)
+  if (url.origin !== base.origin) throw new Error('indexer path must stay on the indexer origin')
   for (const [key, value] of Object.entries(params)) if (value !== undefined) url.searchParams.set(key, value)
 
-  const res = await (indexer.fetch ?? fetch)(url, { signal: AbortSignal.timeout(indexer.timeoutMs ?? 3000) })
-  if (!res.ok) throw new Error(`indexer responded ${res.status}`)
-  const text = await res.text()
-  if (text.length > MAX_INDEXER_RESPONSE) throw new Error('indexer response too large')
+  const res = await (indexer.fetch ?? fetch)(url, {
+    redirect: 'error',
+    cache: 'no-store',
+    signal: AbortSignal.timeout(indexer.timeoutMs ?? 3000),
+  })
+  if (!res.ok) {
+    await res.body?.cancel()
+    throw new Error(`indexer responded ${res.status}`)
+  }
+  const text = await readCappedText(res)
   let body: unknown
   try {
     body = JSON.parse(text)
@@ -405,6 +458,20 @@ export async function readIndexerEvents(
   const from = b.indexedFromCheckpoint
   if (from !== undefined && typeof from !== 'string') throw new Error('indexer checkpoint is not a string')
   return { events: b.events as CoreEventEntry[], cursor, indexedFromCheckpoint: from }
+}
+
+/** True if `v` has every field of a {@link CoreEventEntry} with the right primitive type. */
+function isEventRow(v: unknown): v is CoreEventEntry {
+  if (!v || typeof v !== 'object') return false
+  const e = v as Record<string, unknown>
+  return (
+    typeof e.eventType === 'string' &&
+    typeof e.sender === 'string' &&
+    typeof e.bcs === 'string' &&
+    typeof e.transactionDigest === 'string' &&
+    Number.isSafeInteger(e.eventIndex) &&
+    (e.checkpoint === null || e.checkpoint === undefined || typeof e.checkpoint === 'string')
+  )
 }
 
 async function listFromIndexer(
@@ -425,11 +492,19 @@ async function listFromIndexer(
   const wanted = new Set(kinds)
   const gate = gateId === undefined ? undefined : normalizeSuiAddress(gateId)
   const events: AccessGateEvent[] = []
+  let invalidRows = 0
   for (const entry of body.events) {
     // The indexer is display-only: rows still have to be this package's events of the asked kinds.
-    const event = parseAccessGateEvent(entry, originalId)
-    if (event && wanted.has(event.kind) && (gate === undefined || eventGateId(event) === gate)) {
-      events.push(event)
+    // A malformed or undecodable row is skipped and counted, so one hostile or buggy row cannot
+    // break the feed's pagination (full-node rows keep throwing: that is real layout drift).
+    try {
+      if (!isEventRow(entry)) throw new Error('malformed row')
+      const event = parseAccessGateEvent(entry, originalId)
+      if (event && wanted.has(event.kind) && (gate === undefined || eventGateId(event) === gate)) {
+        events.push(event)
+      }
+    } catch {
+      invalidRows++
     }
   }
   return {
@@ -437,5 +512,6 @@ async function listFromIndexer(
     cursor: body.cursor ? { source: 'indexer', value: body.cursor } : null,
     source: 'indexer',
     indexedFromCheckpoint: body.indexedFromCheckpoint,
+    ...(invalidRows ? { invalidRows } : {}),
   }
 }

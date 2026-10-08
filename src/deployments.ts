@@ -28,7 +28,7 @@ export type AccessGateNetwork = keyof typeof ACCESS_GATE_DEPLOYMENTS
  * @throws {Error} if there is no deployment recorded for `network`.
  */
 export function accessGateDeployment(network: string): AccessGateDeployment {
-  const deployment = (ACCESS_GATE_DEPLOYMENTS as Record<string, AccessGateDeployment>)[network]
+  const deployment = Object.hasOwn(ACCESS_GATE_DEPLOYMENTS, network) ? (ACCESS_GATE_DEPLOYMENTS as Record<string, AccessGateDeployment>)[network] : undefined
   if (!deployment) throw new Error(`no access_gate deployment recorded for ${network}`)
   return deployment
 }

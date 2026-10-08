@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.6] - 2026-10-08
+
+### Changed
+
+- `@mysten/sui` is a **peer dependency** (`^2.33.2`) and a dev dependency, so a host has exactly one
+  copy (the builders return `Transaction` instances); `npm ls --all` runs in CI.
+- Event decoding is **strict**: BCS bytes that do not re-serialise to themselves (a trailing field
+  from a later upgrade, a mismatched layout) throw instead of decoding silently.
+- `accessGateDeployment` no longer resolves `constructor`, `toString`, `__proto__` etc. as networks.
+- A missing `locked_commission` key is malformed (`parseGate` returns `null`), not "no lock"; only an
+  explicit `null` (or `{ vec: [] }`) is none.
+- `readIndexerEvents`: `path` must be relative and stay on the indexer's origin, redirects are
+  refused, responses are `no-store`, and the body is capped in **bytes** while it is read.
+- Indexer rows are untrusted: a malformed or undecodable row is skipped and counted
+  (`AccessGateEventPage.invalidRows`), so one bad row cannot break the feed's pagination. Full-node
+  rows still throw (real drift).
+
+### Added
+
+- `.github/workflows/live-read.yml`: the read-only testnet suite (ABI arity, real events, the
+  pass-variant rendering) runs weekly in CI.
+
 ## [0.0.5] - 2026-10-08
 
 ### Changed (breaking)

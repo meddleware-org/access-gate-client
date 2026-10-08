@@ -9,6 +9,12 @@ describe('deployments', () => {
     expect(ACCESS_GATE_DEPLOYMENTS.testnet).toBe(t)
   })
 
+  it('does not resolve Object prototype members as networks', () => {
+    for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(() => accessGateDeployment(name)).toThrow(/no access_gate deployment recorded/)
+    }
+  })
+
   it('throws for a network without a deployment', () => {
     expect(() => accessGateDeployment('mainnet-typo')).toThrow(/no access_gate deployment recorded/)
   })

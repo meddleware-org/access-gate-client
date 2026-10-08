@@ -118,6 +118,14 @@ describe('gate discovery (gRPC core API)', () => {
     expect(parseGate(gateObj(GATE_A, { locked_commission: { vec: [] } }), PKG)?.lockedCommission).toBeNull()
   })
 
+  it('parseGate treats a missing locked_commission key as malformed, never as "no lock"', () => {
+    const obj = gateObj(GATE_A, {})
+    const data = (obj as { json: Record<string, unknown> }).json
+    expect(parseGate(obj, PKG)?.lockedCommission).toBeNull() // explicit null is "none"
+    delete data.locked_commission
+    expect(parseGate(obj, PKG)).toBeNull()
+  })
+
   it('parseGate returns null when fields are missing', () => {
     expect(parseGate({ objectId: GATE_A, type: GATE_TYPE }, PKG)).toBeNull()
   })
