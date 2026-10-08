@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.5] - 2026-10-08
+
+### Changed (breaking)
+
+- `OwnedAccessNft.usesRemaining: number | null` is replaced by `variant: PassVariant`, a discriminated
+  value: `{ kind: 'unlimited' } | { kind: 'singleUse', remaining: bigint }`. `null` no longer means both
+  "unlimited" and "unknown", and the u64 count is exact (it used to saturate at `MAX_SAFE_INTEGER`).
+- The variant is read from the rendering a full node actually returns (`{ "@variant": ... }`, pinned
+  against a real testnet pass by the live test). A pass whose variant cannot be parsed is rejected by
+  `parseOwnedAccessNft`, so it is absent from `fetchAccessNfts` and never counts as access.
+- `ownsAccessNft` counts only usable passes by default (unlimited, or single-use with uses left); pass
+  `{ usable: false }` to count every pass of the type. An exhausted receipt no longer grants access.
+
+### Added
+
+- `isUsablePass(nft)` and the `PassVariant` type.
+
 ## [0.0.4] - 2026-10-03
 
 ### Fixed

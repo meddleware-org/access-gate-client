@@ -3,6 +3,7 @@ import {
   parseOwnedAccessNft,
   fetchAccessNfts,
   ownsAccessNft,
+  isUsablePass,
   fetchAccessNftById,
   listAllOwnedObjects,
   MAX_OWNED_PAGES,
@@ -19,7 +20,7 @@ const GATE_A = '0xa'
 const GATE_B = '0xb'
 
 /** A core-API owned object (gRPC): id + type top-level, Move struct fields flat under `json`. */
-function coreObj(objectId: string, gateId: string, uses?: number, type = NFT_TYPE): CoreObject {
+function coreObj(objectId: string, gateId: string, uses?: number | bigint, type = NFT_TYPE): CoreObject {
   return {
     objectId,
     type,
@@ -28,10 +29,8 @@ function coreObj(objectId: string, gateId: string, uses?: number, type = NFT_TYP
       data: {
         gate_id: gateId,
         minted_epoch: '10',
-        variant:
-          uses === undefined
-            ? { variant: 'UnlimitedPass', fields: {} }
-            : { variant: 'SingleUse', fields: { uses_remaining: String(uses) } },
+        // The rendering a real full node returns (pinned live against a testnet pass).
+        variant: uses === undefined ? { '@variant': 'UnlimitedPass' } : { '@variant': 'SingleUse', uses_remaining: String(uses) },
       },
     },
   }
@@ -47,18 +46,22 @@ function pagedClient(pages: CoreObject[][]): OwnedObjectsClient & { core: { list
   return { core: { listOwnedObjects } }
 }
 
+const UNLIMITED = { kind: 'unlimited' } as const
+const single = (n: bigint) => ({ kind: 'singleUse', remaining: n }) as const
+
 describe('parseOwnedAccessNft', () => {
-  it('parses an unlimited pass (usesRemaining null)', () => {
-    expect(parseOwnedAccessNft(coreObj('0x1', GATE_A), NFT_TYPE)).toEqual({ objectId: N('0x1'), gateId: N(GATE_A), usesRemaining: null })
+  it('parses an unlimited pass', () => {
+    expect(parseOwnedAccessNft(coreObj('0x1', GATE_A), NFT_TYPE)).toEqual({ objectId: N('0x1'), gateId: N(GATE_A), variant: UNLIMITED })
   })
 
-  it('parses a single-use NFT with remaining count', () => {
-    expect(parseOwnedAccessNft(coreObj('0x2', GATE_A, 3), NFT_TYPE)).toEqual({ objectId: N('0x2'), gateId: N(GATE_A), usesRemaining: 3 })
+  it('parses a single-use NFT with its remaining count as a bigint', () => {
+    expect(parseOwnedAccessNft(coreObj('0x2', GATE_A, 3), NFT_TYPE)).toEqual({ objectId: N('0x2'), gateId: N(GATE_A), variant: single(3n) })
+    expect(parseOwnedAccessNft(coreObj('0x2', GATE_A, 0), NFT_TYPE)?.variant).toEqual(single(0n))
   })
 
   it('matches the type with addresses normalised', () => {
     const long = coreObj('0x1', GATE_A, 1, `${PKG_LONG}::access_gate::AccessNFT`)
-    expect(parseOwnedAccessNft(long, NFT_TYPE)?.usesRemaining).toBe(1)
+    expect(parseOwnedAccessNft(long, NFT_TYPE)?.variant).toEqual(single(1n))
   })
 
   it('rejects a same-named struct from a look-alike package', () => {
@@ -72,7 +75,7 @@ describe('parseOwnedAccessNft', () => {
   })
 
   it('supports the soulbound NFT type', () => {
-    expect(parseOwnedAccessNft(coreObj('0x1', GATE_A, 2, SB_TYPE), SB_TYPE)?.usesRemaining).toBe(2)
+    expect(parseOwnedAccessNft(coreObj('0x1', GATE_A, 2, SB_TYPE), SB_TYPE)?.variant).toEqual(single(2n))
   })
 
   it('throws when asked to match a type that is not an access NFT', () => {
@@ -80,40 +83,47 @@ describe('parseOwnedAccessNft', () => {
     expect(() => parseOwnedAccessNft(coreObj('0x1', GATE_A), 'nonsense')).toThrow(/not an access_gate NFT type/)
   })
 
-  it('usesRemaining is driven by the enum variant tag (typed)', () => {
-    expect(parseOwnedAccessNft(coreObj('0x1', GATE_A), NFT_TYPE)?.usesRemaining).toBeNull()
-    expect(parseOwnedAccessNft(coreObj('0x2', GATE_A, 0), NFT_TYPE)?.usesRemaining).toBe(0)
-    expect(parseOwnedAccessNft(coreObj('0x3', GATE_A, 7), NFT_TYPE)?.usesRemaining).toBe(7)
-  })
-
-  it('tolerates the nested `.fields` shape (transport robustness)', () => {
-    const nested: CoreObject = {
-      objectId: '0xe',
-      type: NFT_TYPE,
-      json: { fields: { data: { fields: { gate_id: GATE_A, variant: { variant: 'SingleUse', fields: { uses_remaining: '5' } } } } } },
-    }
-    expect(parseOwnedAccessNft(nested, NFT_TYPE)).toEqual({ objectId: N('0xe'), gateId: N(GATE_A), usesRemaining: 5 })
-  })
-
   it('accepts a getObject result ({ object })', () => {
     expect(parseOwnedAccessNft({ object: coreObj('0x4', GATE_A, 1) }, NFT_TYPE)?.objectId).toBe(N('0x4'))
   })
+
+  it('rejects an NFT whose gate id is not an address', () => {
+    expect(parseOwnedAccessNft(coreObj('0x1', 'gate-a'), NFT_TYPE)).toBeNull()
+  })
 })
 
-describe('uses_remaining u64 parsing', () => {
-  const withUses = (raw: string) => ({
-    objectId: '0xf',
-    type: NFT_TYPE,
-    json: { data: { gate_id: GATE_A, variant: { variant: 'SingleUse', fields: { uses_remaining: raw } } } },
+describe('pass variant fails closed', () => {
+  const withVariant = (variant: unknown) => ({ objectId: '0xf', type: NFT_TYPE, json: { data: { gate_id: GATE_A, variant } } })
+
+  it('rejects every variant it cannot parse instead of reading it as unlimited', () => {
+    for (const bad of [
+      undefined,
+      null,
+      'UnlimitedPass',
+      {},
+      { '@variant': 'Mystery' },
+      { '@variant': 'SingleUse' },
+      { '@variant': 'SingleUse', uses_remaining: 'lots' },
+      { '@variant': 'SingleUse', uses_remaining: '-1' },
+      { '@variant': 'SingleUse', uses_remaining: '18446744073709551616' },
+      { variant: 'SingleUse', fields: { uses_remaining: '5' } },
+      { variant: 'UnlimitedPass', fields: {} },
+    ]) {
+      expect(parseOwnedAccessNft(withVariant(bad), NFT_TYPE)).toBeNull()
+    }
   })
 
-  it('is exact up to MAX_SAFE_INTEGER and saturates above it', () => {
-    expect(parseOwnedAccessNft(withUses('9007199254740991'), NFT_TYPE)?.usesRemaining).toBe(Number.MAX_SAFE_INTEGER)
-    expect(parseOwnedAccessNft(withUses('18446744073709551615'), NFT_TYPE)?.usesRemaining).toBe(Number.MAX_SAFE_INTEGER)
+  it('keeps u64 counts exact, including the maximum', () => {
+    expect(parseOwnedAccessNft(withVariant({ '@variant': 'SingleUse', uses_remaining: '9007199254740993' }), NFT_TYPE)?.variant).toEqual(single(9007199254740993n))
+    expect(parseOwnedAccessNft(withVariant({ '@variant': 'SingleUse', uses_remaining: '18446744073709551615' }), NFT_TYPE)?.variant).toEqual(single(18446744073709551615n))
   })
+})
 
-  it('reports a malformed count as unknown, never 0', () => {
-    expect(parseOwnedAccessNft(withUses('lots'), NFT_TYPE)?.usesRemaining).toBeNull()
+describe('isUsablePass', () => {
+  it('counts unlimited and non-empty single-use passes only', () => {
+    expect(isUsablePass({ variant: UNLIMITED })).toBe(true)
+    expect(isUsablePass({ variant: single(1n) })).toBe(true)
+    expect(isUsablePass({ variant: single(0n) })).toBe(false)
   })
 })
 
@@ -139,10 +149,6 @@ describe('owned-object reads (gRPC core API)', () => {
     expect(await ownsAccessNft(pagedClient([[coreObj('0x1', GATE_A)]]), '0xowner', NFT_TYPE, N(GATE_B))).toBe(false)
   })
 
-  it('rejects an NFT whose gate id is not an address', () => {
-    expect(parseOwnedAccessNft(coreObj('0x1', 'gate-a'), NFT_TYPE)).toBeNull()
-  })
-
   it('queries the normalised type with json', async () => {
     const client = pagedClient([[]])
     await fetchAccessNfts(client, '0xowner', NFT_TYPE)
@@ -162,6 +168,20 @@ describe('owned-object reads (gRPC core API)', () => {
     expect(await ownsAccessNft(pagedClient([[]]), '0xo', NFT_TYPE)).toBe(false)
   })
 
+  it('ownsAccessNft counts usable passes only by default', async () => {
+    const spent = () => pagedClient([[coreObj('0x1', GATE_A, 0)]])
+    expect(await ownsAccessNft(spent(), '0xo', NFT_TYPE, GATE_A)).toBe(false)
+    expect(await ownsAccessNft(spent(), '0xo', NFT_TYPE, GATE_A, { usable: false })).toBe(true)
+    expect(await ownsAccessNft(pagedClient([[coreObj('0x1', GATE_A, 0), coreObj('0x2', GATE_A, 1)]]), '0xo', NFT_TYPE, GATE_A)).toBe(true)
+    expect(await ownsAccessNft(pagedClient([[coreObj('0x1', GATE_A)]]), '0xo', NFT_TYPE, GATE_A)).toBe(true)
+  })
+
+  it('ownsAccessNft never counts a pass whose variant is unknown', async () => {
+    const unknown: CoreObject = { objectId: '0x1', type: NFT_TYPE, json: { data: { gate_id: GATE_A, variant: { '@variant': 'Mystery' } } } }
+    expect(await ownsAccessNft(pagedClient([[unknown]]), '0xo', NFT_TYPE, GATE_A)).toBe(false)
+    expect(await ownsAccessNft(pagedClient([[unknown]]), '0xo', NFT_TYPE, GATE_A, { usable: false })).toBe(false)
+  })
+
   it('listAllOwnedObjects refuses to truncate past the page budget', async () => {
     const endless: OwnedObjectsClient = {
       core: { listOwnedObjects: vi.fn(async () => ({ objects: [], hasNextPage: true, cursor: 'next' })) },
@@ -172,7 +192,7 @@ describe('owned-object reads (gRPC core API)', () => {
   it('fetchAccessNftById does a typed getObject and parses it', async () => {
     const getObject = vi.fn(async () => ({ object: coreObj('0x9f', GATE_A, 4) }))
     const client: SuiObjectClient = { core: { getObject } }
-    expect(await fetchAccessNftById(client, '0x9f', NFT_TYPE)).toEqual({ objectId: N('0x9f'), gateId: N(GATE_A), usesRemaining: 4 })
+    expect(await fetchAccessNftById(client, '0x9f', NFT_TYPE)).toEqual({ objectId: N('0x9f'), gateId: N(GATE_A), variant: single(4n) })
     expect(getObject).toHaveBeenCalledWith(expect.objectContaining({ objectId: '0x9f', include: { json: true } }))
   })
 })

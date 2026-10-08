@@ -17,6 +17,7 @@ export type {
   PlatformConfigInfo,
   OwnedGate,
   OwnedAccessNft,
+  PassVariant,
   OwnedObjectsClient,
   SuiObjectClient,
   EventsClient,
@@ -46,6 +47,7 @@ export {
   listAllOwnedObjects,
   fetchAccessNfts,
   ownsAccessNft,
+  isUsablePass,
   parseOwnedAccessNft,
   fetchAccessNftById,
 } from './ownership.js'

@@ -11,6 +11,7 @@ import { SuiGrpcClient } from '@mysten/sui/grpc'
 import { accessGateDeployment } from '../../src/deployments.js'
 import { fetchGate, fetchOwnedGates, fetchPlatformConfig, ownsPlatformAdminCap } from '../../src/gates.js'
 import { listAccessGateEvents } from '../../src/events.js'
+import { fetchAccessNftById } from '../../src/ownership.js'
 import type { EventsClient, OwnedObjectsClient, SuiObjectClient } from '../../src/types.js'
 
 const RUN = !!process.env.GRPC_TESTNET
@@ -67,5 +68,15 @@ describe.skipIf(!RUN)('gRPC read path (real testnet full node)', () => {
   it.skipIf(!process.env.ACCESS_GATE_TESTNET_OWNER)("fetchOwnedGates lists an operator's gates", async () => {
     const gates = await fetchOwnedGates(any, process.env.ACCESS_GATE_TESTNET_OWNER!, originalId)
     for (const g of gates) expect(g.adminCapId).toMatch(/^0x[0-9a-f]+$/)
+  })
+
+  // Pins the real rendering of the AccessVariant enum (`{ "@variant": "SingleUse", uses_remaining }`):
+  // the recorded relay pass on testnet. Skips if that object has since been burned.
+  it('parses a real single-use pass (enum rendering)', async (ctx) => {
+    const nftType = `${originalId}::access_gate::SoulboundAccessNFT`
+    const nft = await fetchAccessNftById(any, '0x0f4a41a6e27c660a1a942d751752180c4e84780bdb2d671402c7ed90ed48d8b8', nftType).catch(() => null)
+    if (!nft) ctx.skip()
+    expect(nft!.variant.kind).toBe('singleUse')
+    if (nft!.variant.kind === 'singleUse') expect(typeof nft!.variant.remaining).toBe('bigint')
   })
 })

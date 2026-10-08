@@ -49,8 +49,8 @@ import {
 const client = new SuiGrpcClient({ network: 'testnet', baseUrl: 'https://fullnode.testnet.sui.io:443' })
 const nftType = accessNftType(originalId, /* soulbound */ false)
 
-await ownsAccessNft(client, owner, nftType, gateId) // stops at the first match
-await fetchAccessNfts(client, owner, nftType, gateId) // every page
+await ownsAccessNft(client, owner, nftType, gateId) // a USABLE pass (unlimited, or single-use with uses left); stops at the first match
+await fetchAccessNfts(client, owner, nftType, gateId) // every page; each pass has a `variant`: { kind: 'unlimited' } | { kind: 'singleUse', remaining: bigint }
 await fetchOwnedGates(client, operator, originalId) // the gates an address administers
 await fetchGate(client, gateId, originalId)
 await fetchPlatformConfig(client, platformConfigId, originalId) // version, treasury, commission, fees

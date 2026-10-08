@@ -110,12 +110,17 @@ export interface OwnedGate {
   freeFeePaid: boolean
 }
 
+/**
+ * What a pass allows, as the chain's `AccessVariant` enum: an unlimited pass, or a single-use pass
+ * with a remaining count (a u64, so a `bigint`). Never inferred from a missing field.
+ */
+export type PassVariant = { kind: 'unlimited' } | { kind: 'singleUse'; remaining: bigint }
+
 /** A parsed owned access NFT. */
 export interface OwnedAccessNft {
   objectId: string
   gateId: string
-  /** `null` for an unlimited pass; otherwise remaining single-use count. */
-  usesRemaining: number | null
+  variant: PassVariant
 }
 
 /**

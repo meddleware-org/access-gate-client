@@ -1,5 +1,5 @@
 import { normalizeSuiAddress } from '@mysten/sui/utils'
-import type { CoreObject, OwnedAccessNft, OwnedObjectsClient, SuiObjectClient } from './types.js'
+import type { CoreObject, OwnedAccessNft, OwnedObjectsClient, PassVariant, SuiObjectClient } from './types.js'
 import { normalizeAccessNftType, normalizeType } from './typeNames.js'
 import { idField, structFields, u64Field } from './json.js'
 
@@ -43,39 +43,31 @@ export async function listAllOwnedObjects(
 }
 
 /**
- * Extract `uses_remaining` from a Move enum `AccessVariant` as rendered by RPC, driven by the
- * enum **variant tag** (typed) rather than guessing from field presence. Sui renders a Move
- * enum as `{ variant: 'SingleUse' | 'UnlimitedPass', fields: {...} }`. Returns `null` for an
- * unlimited pass; the remaining count for a single-use.
+ * Read the `AccessVariant` enum as a full node renders it: `{ "@variant": "SingleUse",
+ * "uses_remaining": "8" }` or `{ "@variant": "UnlimitedPass" }` (pinned against a real testnet pass by
+ * the live integration test). Fails closed: an unknown tag, a missing tag or a count that is not a
+ * u64 is `null`, never "unlimited" and never a fabricated 0.
  */
-function parseUsesRemaining(variant: unknown): number | null {
-  if (!variant || typeof variant !== 'object') return null
-  const v = variant as Record<string, unknown>
-  const tag = v.variant ?? v.type ?? v.$kind
-  if (tag === 'UnlimitedPass') return null
-  const fields = structFields(v)
-  const ur = fields?.uses_remaining ?? structFields(fields?.SingleUse)?.uses_remaining
-  if (ur != null) return usesToNumber(ur)
-  // Either an unknown tag, or a SingleUse whose count is missing from this node's rendering — in
-  // both cases the remaining count is unknown, so report null (never a fabricated 0).
+function parseVariant(raw: unknown): PassVariant | null {
+  if (!raw || typeof raw !== 'object') return null
+  const v = raw as Record<string, unknown>
+  if (v['@variant'] === 'UnlimitedPass') return { kind: 'unlimited' }
+  if (v['@variant'] === 'SingleUse') {
+    const remaining = u64Field(v.uses_remaining)
+    return remaining === null ? null : { kind: 'singleUse', remaining }
+  }
   return null
 }
 
-/**
- * Convert an on-chain u64 count (rendered as a decimal string or number) exactly. Counts above
- * `Number.MAX_SAFE_INTEGER` saturate there: still "effectively unlimited", and never reported lower
- * than the chain holds. A malformed value is unknown (`null`).
- */
-function usesToNumber(raw: unknown): number | null {
-  const v = u64Field(raw)
-  if (v === null) return null
-  return v > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(v)
+/** True if the pass can still be used: unlimited, or single-use with uses left. */
+export function isUsablePass(nft: Pick<OwnedAccessNft, 'variant'>): boolean {
+  return nft.variant.kind === 'unlimited' || nft.variant.remaining > 0n
 }
 
 /**
  * Parse a core-API object (a `listOwnedObjects` item or a `getObject`'s `{ object }`) into an
  * {@link OwnedAccessNft}, or `null` unless its type is exactly `nftType` (normalised comparison;
- * a same-named struct from another package is rejected).
+ * a same-named struct from another package is rejected) and its gate id and pass variant parse.
  *
  * @throws {Error} if `nftType` is not an access_gate NFT type.
  */
@@ -84,14 +76,15 @@ export function parseOwnedAccessNft(entry: unknown, nftType: string): OwnedAcces
   const obj = coreObject(entry)
   if (!obj?.objectId || normalizeType(obj.type) !== expected) return null
   const inner = structFields(structFields(obj.json)?.data)
-  const gateId = idField(inner?.gate_id ?? inner?.gateId)
+  const gateId = idField(inner?.gate_id)
   const objectId = idField(obj.objectId)
-  if (!gateId || !objectId) return null
-  return { objectId, gateId, usesRemaining: parseUsesRemaining(inner?.variant) }
+  const variant = parseVariant(inner?.variant)
+  if (!gateId || !objectId || !variant) return null
+  return { objectId, gateId, variant }
 }
 
 /**
- * Read one access NFT by id, when a UI needs its exact `usesRemaining`. Returns `null` if the
+ * Read one access NFT by id, when a UI needs its exact pass variant. Returns `null` if the
  * object is not of `nftType`.
  *
  * @throws {Error} if the RPC call fails (including a missing object).
@@ -125,8 +118,11 @@ export async function fetchAccessNfts(
 }
 
 /**
- * True if `owner` holds at least one access NFT of `nftType` (optionally for `gateId`). Stops
- * paging at the first match.
+ * True if `owner` holds at least one access NFT of `nftType` (optionally for `gateId`) that can be
+ * used: by default only unlimited passes and single-use passes with uses left count, because this is
+ * an authorisation decision (an exhausted pass that `auto_burn_at_zero = false` keeps is a receipt, not
+ * access). Pass `{ usable: false }` to count every pass of the type. A pass whose variant cannot be
+ * parsed never counts. Stops paging at the first match.
  *
  * @throws {Error} if an RPC call fails.
  */
@@ -135,11 +131,13 @@ export async function ownsAccessNft(
   owner: string,
   nftType: string,
   gateId?: string,
+  opts: { usable?: boolean } = {},
 ): Promise<boolean> {
   const gate = gateId ? normalizeSuiAddress(gateId) : undefined
+  const usable = opts.usable ?? true
   const matches = (o: CoreObject): boolean => {
     const nft = parseOwnedAccessNft(o, nftType)
-    return nft !== null && (!gate || nft.gateId === gate)
+    return nft !== null && (!gate || nft.gateId === gate) && (!usable || isUsablePass(nft))
   }
   const objects = await listAllOwnedObjects(client, owner, normalizeAccessNftType(nftType), matches)
   return objects.some(matches)

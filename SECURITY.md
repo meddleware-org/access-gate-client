@@ -26,13 +26,16 @@ A report showing any of these violated is in scope and treated as high severity.
    equals `<originalId>::access_gate::<Name>`. A look-alike package cannot pass as `access_gate`.
 2. **No silent truncation.** Owned-object reads either return every page or throw. A holder is
    never reported as not holding because a list was cut short.
-3. **Indexer data is display-only.**
+3. **Ownership checks are authorisation-grade.** `ownsAccessNft` counts only usable passes (unlimited, or
+   single-use with uses left) unless the caller passes `{ usable: false }`. A pass whose `AccessVariant`
+   cannot be parsed (unknown tag, missing or non-u64 count) is rejected, never read as unlimited.
+4. **Indexer data is display-only.**
    - Indexer rows are decoded and type-checked like full-node events.
    - They are never used to authorise.
    - A gateway or contract must not treat `listAccessGateEvents` output as proof of anything.
-4. **Ids come from the published deployment records.** `src/deployments.ts` is generated from
+5. **Ids come from the published deployment records.** `src/deployments.ts` is generated from
    `@meddleware/access-gate-sui` and drift-checked in CI.
-5. **No keys or secrets.** Signing is delegated to the caller's wallet.
+6. **No keys or secrets.** Signing is delegated to the caller's wallet.
 
 ## Supported versions
 
