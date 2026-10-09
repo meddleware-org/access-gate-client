@@ -242,14 +242,12 @@ export function buildSetPausedTx(ctx: GateAdminContext, paused: boolean): Transa
   return buildGateAdminCall(ctx, 'set_paused', (tx) => [tx.pure.bool(paused)])
 }
 
-/** Change the default uses for future mints (0 ⇒ unlimited pass; N ⇒ single-use with N). */
+/**
+ * Change the default uses for future mints of a single-use gate (N ⇒ single-use with N). The pass kind is fixed at
+ * creation: moving between unlimited (0) and single-use aborts with `E_USES_KIND_IMMUTABLE`.
+ */
 export function buildSetDefaultUsesTx(ctx: GateAdminContext, defaultUses: bigint | number): Transaction {
   return buildGateAdminCall(ctx, 'set_default_uses', (tx) => [tx.pure.u64(toU64(defaultUses))])
-}
-
-/** Switch the soulbound flag for future mints (does not affect already-minted NFTs). */
-export function buildSetSoulboundTx(ctx: GateAdminContext, soulbound: boolean): Transaction {
-  return buildGateAdminCall(ctx, 'set_soulbound', (tx) => [tx.pure.bool(soulbound)])
 }
 
 /** Toggle the auto-burn-at-zero policy for future mints. */

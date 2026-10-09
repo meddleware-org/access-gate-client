@@ -9,7 +9,6 @@ import {
   buildSetPaymentRecipientTx,
   buildSetPausedTx,
   buildSetDefaultUsesTx,
-  buildSetSoulboundTx,
   buildSetAutoBurnAtZeroTx,
   buildSetNftNameTx,
   buildSetNftImageUrlTx,
@@ -189,7 +188,6 @@ describe('gate-admin PTB builders', () => {
     { name: 'buildSetPaymentRecipientTx', fn: 'set_payment_recipient', tx: () => buildSetPaymentRecipientTx(adminCtx, RECIPIENT), inputs: 4 },
     { name: 'buildSetPausedTx', fn: 'set_paused', tx: () => buildSetPausedTx(adminCtx, true), inputs: 4 },
     { name: 'buildSetDefaultUsesTx', fn: 'set_default_uses', tx: () => buildSetDefaultUsesTx(adminCtx, 5n), inputs: 4 },
-    { name: 'buildSetSoulboundTx', fn: 'set_soulbound', tx: () => buildSetSoulboundTx(adminCtx, true), inputs: 4 },
     { name: 'buildSetAutoBurnAtZeroTx', fn: 'set_auto_burn_at_zero', tx: () => buildSetAutoBurnAtZeroTx(adminCtx, false), inputs: 4 },
     { name: 'buildSetNftNameTx', fn: 'set_nft_name', tx: () => buildSetNftNameTx(adminCtx, 'Name'), inputs: 4 },
     { name: 'buildSetNftImageUrlTx', fn: 'set_nft_image_url', tx: () => buildSetNftImageUrlTx(adminCtx, 'https://x/y.png'), inputs: 4 },
@@ -313,7 +311,6 @@ describe('ptb builders — exact arguments', () => {
     expect(callArgs(buildSetPaymentRecipientTx(adminCtx, RECIPIENT), 'set_payment_recipient')).toEqual([...head, addr(RECIPIENT)])
     expect(callArgs(buildSetPausedTx(adminCtx, true), 'set_paused')).toEqual([...head, bool(true)])
     expect(callArgs(buildSetDefaultUsesTx(adminCtx, 9n), 'set_default_uses')).toEqual([...head, u64(9n)])
-    expect(callArgs(buildSetSoulboundTx(adminCtx, false), 'set_soulbound')).toEqual([...head, bool(false)])
     expect(callArgs(buildSetAutoBurnAtZeroTx(adminCtx, true), 'set_auto_burn_at_zero')).toEqual([...head, bool(true)])
     expect(callArgs(buildSetNftNameTx(adminCtx, 'N'), 'set_nft_name')).toEqual([...head, str('N')])
     expect(callArgs(buildSetNftImageUrlTx(adminCtx, 'https://x/y.png'), 'set_nft_image_url')).toEqual([...head, str('https://x/y.png')])

@@ -1,6 +1,6 @@
 {
   "name": "@meddleware/access-gate-client",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "homepage": "https://docs.meddleware.co.uk/blockchain/sui/access-gate/",
   "type": "module",
   "description": "Client for the access_gate Move package: typed reads, events, transaction builders, abort messages and deployment ids.",
@@ -47,7 +47,7 @@
     "lint": "npm run lint:js"
   },
   "devDependencies": {
-    "@meddleware/access-gate-sui": "0.0.5",
+    "@meddleware/access-gate-sui": "0.0.6",
     "@mysten/sui": "^2.35.0",
     "@types/node": "~24.12.2",
     "eslint": "^10.11.0",

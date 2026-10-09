@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.8] - 2026-10-09
+
+### Changed
+
+- **Breaking (pre-v0.2):** `buildSetSoulboundTx` is removed (the contract has no `set_soulbound`; the pass kind is fixed at creation). `set_default_uses` cannot cross zero (`E_USES_KIND_IMMUTABLE`). Deployments regenerated for the 2026-10-09 testnet publication (access_gate 0xd7ddaa94…, @meddleware/access-gate-sui 0.0.6)
+
 ## [0.0.7] - 2026-10-08
 
 ### Fixed

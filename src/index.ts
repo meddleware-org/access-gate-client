@@ -100,7 +100,6 @@ export {
   buildSetPaymentRecipientTx,
   buildSetPausedTx,
   buildSetDefaultUsesTx,
-  buildSetSoulboundTx,
   buildSetAutoBurnAtZeroTx,
   buildSetNftNameTx,
   buildSetNftImageUrlTx,
