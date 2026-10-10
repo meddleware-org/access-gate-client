@@ -14,7 +14,7 @@
 **Deployment status:**
 
 - npm `@meddleware/access-gate-client` **0.0.8** (`latest`), the 2026-10-09 release. Git tag `v0.0.8`
-  is at `b06e3ce`. The 2026-10-10 fix wave (**0.0.9**, `commit pending`, not yet tagged or published)
+  is at `b06e3ce`. The 2026-10-10 fix wave (**0.0.9**, `commit `dc8b089``, not yet tagged or published)
   closes F24. (Baseline of this audit: 0.0.4 at `fc6e351`, published
   2026-10-03 with an SLSA v1 provenance attestation.)
 - Records the **2026-10-09 testnet republication**: `access_gate`
@@ -772,7 +772,7 @@ status, SDK text and node/wallet text formats, all tested.
 
 ### F24 — Abort table and `AGENTS.md` lag the 2026-10-09 republication
 
-**Severity:** Low   **Disposition:** RESOLVED (0.0.9, `commit pending`)
+**Severity:** Low   **Disposition:** RESOLVED (0.0.9, `commit `dc8b089``)
 **Where:** `src/aborts.ts:12-29` (`ACCESS_GATE_ABORTS` ends at 14); `tests/aborts.test.ts:7` (asserts 1-14);
 `README.md:117` and `CLAUDE.md:45` (both say "codes 1-14"); `AGENTS.md` ("Runtime dependency `@mysten/sui`
 `^2.33.1`").
@@ -795,7 +795,7 @@ status, SDK text and node/wallet text formats, all tested.
 **Impact:** Missing user-facing messages for two abort codes; a misleading note for contributors. No funds
 or authorisation are affected (the chain still aborts).
 
-**Remediation / evidence (2026-10-10, 0.0.9, `commit pending`):**
+**Remediation / evidence (2026-10-10, 0.0.9, `commit `dc8b089``):**
 
 - `ACCESS_GATE_ABORTS` has codes 15 (`E_POLICY_COMBINATION`) and 16 (`E_USES_KIND_IMMUTABLE`) with user-facing
   messages; the table test is `covers codes 1–16 with their Move constant names`, and `gives the new
@@ -1217,7 +1217,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
     baseline text still reads `^2.33.1`.
   - Pre-save consistency checklist re-run.
 
-- 2026-10-10 — Fix wave on `main` after `b06e3ce`: version 0.0.9 (`commit pending`, not tagged or published).
+- 2026-10-10 — Fix wave on `main` after `b06e3ce`: version 0.0.9 (`commit `dc8b089``, not tagged or published).
   - **F24 RESOLVED:** abort codes 15 and 16 with messages; offline comparison of the table with the `E_*`
     constants of the pinned `access-gate-sui` source; `AGENTS.md`, `README.md`, `CLAUDE.md` corrected.
   - **New in 0.0.9:** `validateGatePolicy` and the `buildCreateGateTx` guard (the client-side fix recorded for
