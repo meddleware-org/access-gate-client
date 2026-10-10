@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { bcs } from '@mysten/sui/bcs'
 import { toBase64 } from '@mysten/sui/utils'
 import {
@@ -18,6 +21,7 @@ import {
   buildMakeGateFreeTx,
   DEFAULT_GATE_POLICY,
   isRestrictivePolicy,
+  validateGatePolicy,
   commissionForPrice,
   minimumPaidPriceMist,
   gateCommissionMist,
@@ -145,6 +149,70 @@ describe('ptb builders', () => {
     const data = tx.getData() as { inputs: Array<{ Pure?: { bytes: string } }> }
     // The first four inputs are the policy bools, in order: true, false, true, true (BCS 1/0).
     expect(data.inputs.slice(0, 4).map((i) => i.Pure?.bytes)).toEqual(['AQ==', 'AA==', 'AQ==', 'AQ=='])
+  })
+})
+
+describe('validateGatePolicy', () => {
+  const gateOpts = {
+    priceMist: 10_000_000n,
+    paymentRecipient: RECIPIENT,
+    defaultUses: 1n,
+    soulbound: false,
+    autoBurnAtZero: true,
+    nftName: 'Pass',
+    nftImageUrl: 'https://example.com/i.png',
+    nftDescription: 'd',
+  }
+  // The Move rule, `new_gate_policy`: freeze_requires_unpaused || !(pause_blocks_decryption || pause_blocks_access).
+  // Written out as the full truth table (freezeRequiresUnpaused, lockCommissionOnFreeze, pauseBlocksDecryption,
+  // pauseBlocksAccess) so a change to either side is visible.
+  const bits = (n: number) => [Boolean(n & 8), Boolean(n & 4), Boolean(n & 2), Boolean(n & 1)] as const
+  const policyOf = (n: number) => {
+    const [freezeRequiresUnpaused, lockCommissionOnFreeze, pauseBlocksDecryption, pauseBlocksAccess] = bits(n)
+    return { freezeRequiresUnpaused, lockCommissionOnFreeze, pauseBlocksDecryption, pauseBlocksAccess }
+  }
+  // Invalid: freezeRequiresUnpaused false and (decryption or access) true, whatever lockCommissionOnFreeze is.
+  const INVALID = new Set([0b0001, 0b0010, 0b0011, 0b0101, 0b0110, 0b0111])
+
+  it('matches the Move rule on all 16 combinations', () => {
+    for (let n = 0; n < 16; n++) {
+      const violation = validateGatePolicy(policyOf(n))
+      if (INVALID.has(n)) {
+        expect(violation, `combination ${n.toString(2).padStart(4, '0')}`).toMatchObject({ name: 'E_POLICY_COMBINATION', abortCode: 15 })
+        expect(violation!.message).toMatch(/freezeRequiresUnpaused/)
+      } else {
+        expect(violation, `combination ${n.toString(2).padStart(4, '0')}`).toBeNull()
+      }
+    }
+  })
+
+  it('accepts the default policy and the restrictive valid ones', () => {
+    expect(validateGatePolicy(DEFAULT_GATE_POLICY)).toBeNull()
+    expect(validateGatePolicy({ ...DEFAULT_GATE_POLICY, freezeRequiresUnpaused: true, pauseBlocksAccess: true })).toBeNull()
+  })
+
+  it('agrees with the rule in the published Move source', () => {
+    const pkgJson = createRequire(import.meta.url).resolve('@meddleware/access-gate-sui/package.json')
+    const source = readFileSync(join(dirname(pkgJson), 'sources', 'access_gate.move'), 'utf8')
+    const body = /public fun new_gate_policy\([^)]*\): GatePolicy \{\s*assert!\(([\s\S]*?)\);/.exec(source)?.[1] ?? ''
+    expect(body.replace(/\s+/g, ' ').trim()).toBe(
+      'freeze_requires_unpaused || !(pause_blocks_decryption || pause_blocks_access), E_POLICY_COMBINATION,',
+    )
+  })
+
+  it('buildCreateGateTx throws for an invalid policy, for paid and free gates, before building', () => {
+    const policy = { ...DEFAULT_GATE_POLICY, pauseBlocksAccess: true }
+    expect(() => buildCreateGateTx(PKG, PLATFORM, { ...gateOpts, policy })).toThrow(/Invalid gate policy.*freezeRequiresUnpaused/)
+    expect(() => buildCreateGateTx(PKG, PLATFORM, { ...gateOpts, priceMist: 0n, freeGateFeeMist: 1n, policy })).toThrow(
+      /Invalid gate policy/,
+    )
+  })
+
+  it('buildCreateGateTx accepts every valid combination', () => {
+    for (let n = 0; n < 16; n++) {
+      if (INVALID.has(n)) continue
+      expect(() => buildCreateGateTx(PKG, PLATFORM, { ...gateOpts, policy: policyOf(n) })).not.toThrow()
+    }
   })
 })
 

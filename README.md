@@ -97,6 +97,10 @@ const tx = buildPurchaseTx(gate, priceMist)
 
 - There are builders for purchase, consume, create, every `AdminCap` setter, airdrop, make-free
   and freeze.
+- `buildCreateGateTx` refuses an invalid `policy` before it builds anything. `validateGatePolicy(policy)` is the
+  same check as a pure function: it returns the violated rule (`E_POLICY_COMBINATION`, code 15) or `null`. The
+  rule mirrors `new_gate_policy`: if `pauseBlocksDecryption` or `pauseBlocksAccess` is set,
+  `freezeRequiresUnpaused` must be set too. Use it to validate an operator's configuration at start-up.
 - Commission helpers (`commissionForPrice`, `gateCommissionMist`, `minimumPaidPriceMist`) mirror
   the contract's arithmetic.
 
@@ -114,7 +118,8 @@ try { /* sign and execute */ } catch (e) {
   superseded package whose codes 13 and 14 meant something else), so `abortMessage` now requires it.
 - `abortMessage` finds an `access_gate` abort in an SDK `ExecutionError`, a `SimulationError`, a
   failed transaction's status, or error text from the SDK or a wallet.
-- It returns the user-facing message for codes 1–14 (`ACCESS_GATE_ABORTS`); 13 (`E_WRONG_VERSION`)
+- It returns the user-facing message for codes 1–16 (`ACCESS_GATE_ABORTS`; a unit test compares the table with the
+  `E_*` constants of the published Move source); 13 (`E_WRONG_VERSION`)
   means the called package version has been retired — rebuild against the current `publishedAt`.
 - Aborts from other modules or packages return `null`.
 

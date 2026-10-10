@@ -26,6 +26,16 @@ export const ACCESS_GATE_ABORTS: Readonly<Record<number, AccessGateAbort>> = Obj
     message: 'This version of the access-gate contract has been retired; reload to use the current one.',
   },
   14: { name: 'E_NOT_UPGRADE', message: 'The platform is already at this contract version.' },
+  15: {
+    name: 'E_POLICY_COMBINATION',
+    message:
+      'This gate policy is invalid: if pausing blocks decryption or access, freezing must also require the gate to be unpaused.',
+  },
+  16: {
+    name: 'E_USES_KIND_IMMUTABLE',
+    message:
+      'A gate cannot switch between unlimited and single-use passes; only the number of uses of a single-use gate can change.',
+  },
 })
 
 /** How deep `findAbort` follows `.error` wrappers (a two-object cycle must not overflow the stack). */

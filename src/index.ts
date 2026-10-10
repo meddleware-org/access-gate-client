@@ -81,10 +81,12 @@ export type {
 
 export { ACCESS_GATE_ABORTS, abortMessage } from './aborts.js'
 export type { AccessGateAbort } from './aborts.js'
+export type { GatePolicyViolation } from './ptb.js'
 
 export {
   DEFAULT_GATE_POLICY,
   isRestrictivePolicy,
+  validateGatePolicy,
   BPS_DENOMINATOR,
   MAX_COMMISSION_BPS,
   platformCommissionTerms,

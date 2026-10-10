@@ -9,7 +9,7 @@
 | Licence | 0BSD |
 | Type | TypeScript source package (declaration-only build) |
 | Runtime targets | Node.js ≥ 22, browsers (via Vite), Cloudflare Workers |
-| Runtime dependency | `@mysten/sui` `^2.33.1` |
+| Peer dependency | `@mysten/sui` `^2.33.2` (no runtime dependencies) |
 
 ## Layout
 
@@ -22,8 +22,8 @@ src/
 ├── ownership.ts    — paged owned-object reads; access NFTs
 ├── gates.ts        — AdminCaps, Gates, PlatformConfig, PlatformAdminCap
 ├── events.ts       — BCS event decoding, listAccessGateEvents (full node / indexer)
-├── aborts.ts       — ACCESS_GATE_ABORTS, abortMessage
-└── ptb.ts          — transaction builders, commission arithmetic
+├── aborts.ts       — ACCESS_GATE_ABORTS (codes 1–16), abortMessage
+└── ptb.ts          — transaction builders, gate-policy validator, commission arithmetic
 scripts/gen-deployments.mjs — writes/checks src/deployments.ts from @meddleware/access-gate-sui
 tests/              — vitest unit tests; tests/integration — live testnet (GRPC_TESTNET=1)
 ```

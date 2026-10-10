@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.9] - 2026-10-10
+
+### Added
+
+- `validateGatePolicy(policy)` returns the violated rule (`E_POLICY_COMBINATION`, 15) or `null`, mirroring
+  `access_gate::new_gate_policy`; `GatePolicyViolation` type. `buildCreateGateTx` throws for an invalid policy
+  before it builds a transaction (the contract would abort every such create).
+- `ACCESS_GATE_ABORTS` / `abortMessage` cover `E_POLICY_COMBINATION` (15) and `E_USES_KIND_IMMUTABLE` (16) of the
+  2026-10-09 package.
+- A unit test compares the abort table with the `E_*` constants of the pinned `@meddleware/access-gate-sui`
+  Move source, and another pins the policy rule's text in that source.
+
+### Changed
+
+- **Breaking (pre-v0.2):** `buildCreateGateTx` now throws for a `policy` that sets `pauseBlocksDecryption` or
+  `pauseBlocksAccess` without `freezeRequiresUnpaused`.
+- Docs: README, `CLAUDE.md` and `AGENTS.md` say codes 1–16 and list `@mysten/sui` as a peer dependency.
+
 ## [0.0.8] - 2026-10-09
 
 ### Changed

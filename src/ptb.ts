@@ -64,6 +64,35 @@ export function isRestrictivePolicy(policy: GatePolicy): boolean {
   )
 }
 
+/** A gate policy that `access_gate::new_gate_policy` rejects, and why. */
+export interface GatePolicyViolation {
+  /** The Move constant the chain aborts with. */
+  name: 'E_POLICY_COMBINATION'
+  /** The abort code (`ACCESS_GATE_ABORTS` key). */
+  abortCode: 15
+  /** A message fit for an operator or a log. */
+  message: string
+}
+
+/**
+ * Check `policy` against the rule `access_gate::new_gate_policy` enforces, without a chain call.
+ * Returns the violated rule, or `null` if the policy is valid.
+ *
+ * The rule: `freezeRequiresUnpaused || !(pauseBlocksDecryption || pauseBlocksAccess)`. A policy whose pause
+ * blocks decryption or access must also forbid freezing while paused; otherwise an admin could pause and
+ * freeze the gate, after which no holder could consume a pass or decrypt, ever. `lockCommissionOnFreeze` is
+ * unconstrained. `buildCreateGateTx` applies this check before it builds anything.
+ */
+export function validateGatePolicy(policy: GatePolicy): GatePolicyViolation | null {
+  if (policy.freezeRequiresUnpaused || !(policy.pauseBlocksDecryption || policy.pauseBlocksAccess)) return null
+  return {
+    name: 'E_POLICY_COMBINATION',
+    abortCode: 15,
+    message:
+      'Invalid gate policy: when pausing blocks decryption or access, freezing must also require the gate to be unpaused (freezeRequiresUnpaused).',
+  }
+}
+
 /**
  * Build a PTB that purchases access: split `priceMist` from the gas coin and call
  * `access_gate::purchase(gate, platformConfig, payment)`. Overpayment is refunded on-chain, so the
@@ -129,6 +158,9 @@ export function buildConsumeTx(
  *   `minimumPaidPriceMist` or the call aborts (`E_PRICE_TOO_LOW`, 11).
  * - `priceMist == 0` calls `create_free_gate`, paying `freeGateFeeMist` (the platform's current
  *   `free_gate_fee_mist`, from `fetchPlatformConfig`) out of gas; an excess is refunded on-chain.
+ *
+ * @throws {Error} if `policy` is an invalid combination ({@link validateGatePolicy}); the contract would
+ *   abort with `E_POLICY_COMBINATION` (15), so no transaction is built.
  */
 export function buildCreateGateTx(
   packageId: string,
@@ -148,8 +180,10 @@ export function buildCreateGateTx(
     freeGateFeeMist?: bigint | number
   },
 ): Transaction {
-  const tx = new Transaction()
   const p = opts.policy ?? DEFAULT_GATE_POLICY
+  const violation = validateGatePolicy(p)
+  if (violation) throw new Error(violation.message)
+  const tx = new Transaction()
   const policy = only(tx.moveCall({
     target: `${packageId}::access_gate::new_gate_policy`,
     arguments: [

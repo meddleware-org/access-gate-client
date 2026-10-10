@@ -14,7 +14,8 @@
 **Deployment status:**
 
 - npm `@meddleware/access-gate-client` **0.0.8** (`latest`), the 2026-10-09 release. Git tag `v0.0.8`
-  is at `b06e3ce`, which is the HEAD of `main`. (Baseline of this audit: 0.0.4 at `fc6e351`, published
+  is at `b06e3ce`. The 2026-10-10 fix wave (**0.0.9**, `commit pending`, not yet tagged or published)
+  closes F24. (Baseline of this audit: 0.0.4 at `fc6e351`, published
   2026-10-03 with an SLSA v1 provenance attestation.)
 - Records the **2026-10-09 testnet republication**: `access_gate`
   `0xd7ddaa94b74330979b2b618fc81206d160a264f1c9ca148a77fa2144301388c9`, `PlatformConfig`
@@ -39,7 +40,7 @@
     unpaid access.
 
   Realised ceiling at the 2026-10-03 baseline: **Medium** (F1, F2, both now RESOLVED). Realised
-  ceiling at 2026-10-09: **Low** (F24).
+  ceiling at 2026-10-09: **Low** (F24); none open after the 2026-10-10 fix wave (0.0.9).
 **Status:** re-verified 2026-10-09 (first-pass baseline 2026-10-03)
 
 **Package manager / lockfile:** npm; `package-lock.json` committed (lockfileVersion 3)
@@ -91,19 +92,20 @@ Its core discipline is strong and well tested:
 - **Exact, strict BCS events.** Events decode from BCS, re-serialise to the same bytes (trailing
   bytes refuse), with a prototype-key guard.
 - **Location-scoped aborts.** An abort is only claimed when it is located in `access_gate` of the given
-  original id. The table covers codes 1-14 (15 and 16 are missing: F24).
+  original id. The table covers codes 1-16 and a unit test compares it with the `E_*` constants of the
+  pinned Move source (F24, 0.0.9).
 - **Generated IDs.** Deployment IDs are generated from the published Move records and drift-checked
   in CI.
 - **Builder tests.** Every builder's target and **exact argument order** is asserted hermetically.
   A weekly live suite compares each builder's Move function with the chain, down to the reference
   kind and type per parameter, and compares every struct the parsers read.
 
-At the 2026-10-09 re-verification: **145/145 unit tests pass** (8 files); 98.37% statements, 95.2%
+At the 2026-10-10 fix wave (0.0.9): **153/153 unit tests pass** (8 files); 98.39% statements, 95.29%
 branches, 100% functions, 99.52% lines; tsc, eslint, `npm audit` (0) and `check:deployments` are clean;
 the live read-only suite passes against the 2026-10-09 testnet package (47 passed, 3 skipped).
 
-**Where the risk concentrates (2026-10-09).** Every finding of the 2026-10-03 baseline is closed by
-0.0.5-0.0.8 (see the re-verification log):
+**Where the risk concentrates (2026-10-09, updated 2026-10-10).** Every finding of the 2026-10-03 baseline is
+closed by 0.0.5-0.0.8, and F24 by 0.0.9 (see the re-verification log):
 
 1. **F1 and F2 (Medium at baseline, now RESOLVED).** `usesRemaining: null` is replaced by a
    discriminated `variant`; an unparsable pass is rejected; `ownsAccessNft` counts only usable passes
@@ -115,9 +117,10 @@ the live read-only suite passes against the 2026-10-09 testnet package (47 passe
 3. **Hardening (F5-F13, RESOLVED).** Prototype-key lookup, `locked_commission`, indexer bounds and bad
    rows, the peer dependency, builder input checks, commission helpers, bounded gate reads, abort
    scoping.
-4. **Remaining: F24 (Low).** The abort table stops at code 14 while the 2026-10-09 package adds
-   `E_POLICY_COMBINATION` (15) and `E_USES_KIND_IMMUTABLE` (16), and one `AGENTS.md` row is stale. This
-   is a maintainer patch item (next release 0.0.9), not mainnet-blocked.
+4. **F24 (Low, RESOLVED in 0.0.9 on 2026-10-10).** The abort table stopped at code 14 while the 2026-10-09
+   package adds `E_POLICY_COMBINATION` (15) and `E_USES_KIND_IMMUTABLE` (16). The table now covers 1-16 and is
+   compared with the Move source offline; `validateGatePolicy` and `buildCreateGateTx` refuse an invalid
+   policy before a transaction is built; one `AGENTS.md` row is corrected.
 
 Mainnet remains unpublished, so the pre-mainnet gates that need a mainnet record or an external review
 stay open in Section D.
@@ -177,7 +180,7 @@ Critical / High / Medium / Low / Info / Positive (unchanged across the corpus).
 
 ## Scope
 
-**In scope (HEAD `b06e3ce` = tag `v0.0.8`, 2026-10-09; baseline `fc6e351` = tag `v0.0.4`, 2026-10-03):**
+**In scope (HEAD `b06e3ce` = tag `v0.0.8`, 2026-10-09, plus the 0.0.9 fix wave of 2026-10-10; baseline `fc6e351` = tag `v0.0.4`, 2026-10-03):**
 
 - `src/{index,types,typeNames,json,ownership,gates,events,aborts,ptb,deployments}.ts`
 - `scripts/gen-deployments.mjs`
@@ -203,8 +206,8 @@ the read-indexer service; the consuming apps.
 | Command | Result |
 | --- | --- |
 | `npm ci` | clean; 0 vulnerabilities (baseline) |
-| `npx vitest run` | **145 passed** (8 files); baseline 111 (7 files) |
-| `npx vitest run --coverage` (coverage plugin installed `--no-save`; no manifest change) | 98.37% statements, 95.2% branches, 100% functions, 99.52% lines (baseline 97.37 / 92.71 / 100 / 98.57). Uncovered: `aborts.ts:55`, `events.ts:374-375`, `gates.ts:26-28`, `json.ts:27-28,41`, `ownership.ts:13,36`, `ptb.ts:48` |
+| `npx vitest run` | **153 passed** (8 files, 2026-10-10, 0.0.9); 145 on 2026-10-09; baseline 111 (7 files) |
+| `npx vitest run --coverage` (coverage plugin installed `--no-save`; no manifest change) | 98.39% statements, 95.29% branches, 100% functions, 99.52% lines (2026-10-10; baseline 97.37 / 92.71 / 100 / 98.57). Uncovered: `aborts.ts:65`, `events.ts:374-375`, `gates.ts:26-28`, `json.ts:27-28,41`, `ownership.ts:13,36`, `ptb.ts:48` |
 | `npx tsc --noEmit` / `npx eslint .` | clean / clean |
 | `npm audit --audit-level=high` | 0 vulnerabilities |
 | `npm run check:deployments` | `src/deployments.ts matches @meddleware/access-gate-sui@0.0.6` |
@@ -632,7 +635,7 @@ access_gate abort`, `survives a cyclic error chain`, `still finds an abort wrapp
 
 ### F14 — Documentation drift
 
-**Severity:** Info   **Disposition:** RESOLVED (0.0.7, `a8e5f16`; one new stale row recorded as F24)
+**Severity:** Info   **Disposition:** RESOLVED (0.0.7, `a8e5f16`; one new stale row recorded as F24, fixed in 0.0.9)
 **Where:**
 
 - `AGENTS.md` ("Version `0.0.1`").
@@ -650,7 +653,7 @@ access_gate abort`, `survives a cyclic error chain`, `still finds an abort wrapp
 the `@variant` rendering; `types.ts` documents `platformConfigId` as read by purchase and consume;
 `SECURITY.md` (shipped in the package since 0.0.7) states the authorisation role (invariant 3); `README.md`
 "Errors" says `abortMessage` requires `originalId`; `CLAUDE.md` has the "Authorisation role" invariant. The
-`AGENTS.md` runtime-dependency row is stale again after F9 (F24).
+`AGENTS.md` runtime-dependency row went stale again after F9; corrected in 0.0.9 (F24).
 
 **Baseline recommendation (2026-10-03):** Correct each one.
 
@@ -750,8 +753,8 @@ completeness test still forces any new builder into the table).
 
 **Severity:** Positive
 
-`ACCESS_GATE_ABORTS` mirrors `E_*` codes 1–14 by name (test `covers codes 1–14 with their Move
-constant names`; codes 15 and 16 of the 2026-10-09 package are missing: F24). `abortMessage` claims an abort only in module `access_gate`, and in the given
+`ACCESS_GATE_ABORTS` mirrors `E_*` codes 1–16 by name (test `covers codes 1–16 with their Move
+constant names`, plus the offline comparison with the Move source, F24). `abortMessage` claims an abort only in module `access_gate`, and in the given
 package when `originalId` is passed. It handles SDK `ExecutionError`, `SimulationError`, failed
 status, SDK text and node/wallet text formats, all tested.
 
@@ -769,7 +772,7 @@ status, SDK text and node/wallet text formats, all tested.
 
 ### F24 — Abort table and `AGENTS.md` lag the 2026-10-09 republication
 
-**Severity:** Low   **Disposition:** DEFERRED (maintainer: next patch release 0.0.9; not mainnet-gated, no `OPERATOR_TASKS.md` item)
+**Severity:** Low   **Disposition:** RESOLVED (0.0.9, `commit pending`)
 **Where:** `src/aborts.ts:12-29` (`ACCESS_GATE_ABORTS` ends at 14); `tests/aborts.test.ts:7` (asserts 1-14);
 `README.md:117` and `CLAUDE.md:45` (both say "codes 1-14"); `AGENTS.md` ("Runtime dependency `@mysten/sui`
 `^2.33.1`").
@@ -792,10 +795,24 @@ status, SDK text and node/wallet text formats, all tested.
 **Impact:** Missing user-facing messages for two abort codes; a misleading note for contributors. No funds
 or authorisation are affected (the chain still aborts).
 
-**Remediation / evidence:** Add codes 15 and 16 with messages, extend the table test to 1-16, and correct
-the `AGENTS.md` row, and the "1-14" wording in `README.md` and `CLAUDE.md`; optionally add a live check that compares the table with the package's `E_*`
-constants (the `access-gate-sui` repo's constants are the reference). Found at the 2026-10-09
-re-verification; no code was changed in this pass.
+**Remediation / evidence (2026-10-10, 0.0.9, `commit pending`):**
+
+- `ACCESS_GATE_ABORTS` has codes 15 (`E_POLICY_COMBINATION`) and 16 (`E_USES_KIND_IMMUTABLE`) with user-facing
+  messages; the table test is `covers codes 1–16 with their Move constant names`, and `gives the new
+  2026-10-09 package codes their messages` pins `abortMessage` for both.
+- Drift: `mirrors every E_* constant of the published Move source, name and code` reads `sources/access_gate.move`
+  from the exactly-pinned devDependency `@meddleware/access-gate-sui` (0.0.6, the source the deployment ids are
+  generated from) and requires the table to equal its `E_*` constants. It is offline and runs on every push, so a new
+  or renumbered constant fails at the next `access-gate-sui` bump. This replaces the optional live check.
+- Both codes were reachable from this package. For code 15 the cause is now removed at the source: new
+  `validateGatePolicy(policy)` mirrors `new_gate_policy` (`freezeRequiresUnpaused || !(pauseBlocksDecryption ||
+  pauseBlocksAccess)`) and `buildCreateGateTx` throws before building (access-gate-ui F12 consumes it). Tests: the
+  16-row truth table, the rule text pinned against the Move source, and `buildCreateGateTx` for paid and free gates.
+  Code 16 (`buildSetDefaultUsesTx`) needs the live gate's current kind, which a builder without chain state
+  cannot know, so it stays a chain abort with a message.
+- `AGENTS.md` now says peer dependency `^2.33.2`; `README.md` and `CLAUDE.md` say codes 1–16 and document the
+  validator.
+- Found at the 2026-10-09 re-verification.
 
 ---
 
@@ -818,7 +835,8 @@ re-verification; no code was changed in this pass.
 | I13 | An authorisation-grade ownership check counts only usable passes | `ownership.ts::ownsAccessNft`, `isUsablePass` | `ownsAccessNft counts usable passes only by default`, `never counts a pass whose variant is unknown` | HOLDS (F2, F1 fixed 0.0.5) |
 | I14 | No keys, secrets or hardcoded IDs outside `deployments.ts` | `src/**` | review; `npm pack` contents | HOLDS |
 | I15 | One `@mysten/sui` copy per embedding host | peer dependency `^2.33.2`; consumers' ranges | `npm ls --all` in CI here; `npm ls` in the dashboard (per its `CLAUDE.md`) | HOLDS (F9 fixed 0.0.6) |
-| I16 | The abort table mirrors every `E_*` constant of the published package | `aborts.ts::ACCESS_GATE_ABORTS` | `covers codes 1–14 with their Move constant names` (hand-mirrored) | GAP — codes 15 and 16 missing (F24) |
+| I16 | The abort table mirrors every `E_*` constant of the published package | `aborts.ts::ACCESS_GATE_ABORTS` | `mirrors every E_* constant of the published Move source, name and code` (reads the pinned `@meddleware/access-gate-sui` source); `covers codes 1–16…` | HOLDS (F24 fixed 0.0.9) |
+| I17 | A gate policy `buildCreateGateTx` builds satisfies `new_gate_policy`'s rule | `ptb.ts::validateGatePolicy`, `buildCreateGateTx` | `validateGatePolicy` truth table (16 rows), rule text pinned to the Move source, `buildCreateGateTx throws for an invalid policy…` | HOLDS (0.0.9) |
 
 ---
 
@@ -937,7 +955,8 @@ longer exists (its builder was removed in 0.0.8), and the live per-parameter dri
 | Commission `max(⌊p·bps/10⁴⌋, floor)` ≤ 10% | `commissionForPrice` | `access_gate::commission_for_price` | hand-mirrored tests both sides; no shared vector |
 | Minimum paid price | `minimumPaidPriceMist` (saturates at `u64::MAX`) | `min_paid_price_mist` (saturates at `u64::MAX`) | `minimumPaidPriceMist saturates at u64::MAX like the contract` (hand-mirrored; F11 fixed) |
 | Event layouts (8) | `events.ts::LAYOUTS` | Move event structs | `tests/schema.ts` + `schema-drift.integration.test.ts` against the chain (F3 fixed) |
-| Abort codes 1–16 | `ACCESS_GATE_ABORTS` (1–14 only) | `E_*` constants (16 in the 2026-10-09 package) | name test (hand-mirrored); 15 and 16 missing (F24) |
+| Abort codes 1–16 | `ACCESS_GATE_ABORTS` (1–16) | `E_*` constants (16 in the 2026-10-09 package) | `mirrors every E_* constant of the published Move source` (offline, pinned devDependency source; F24 fixed 0.0.9) |
+| Gate-policy rule | `validateGatePolicy` | `new_gate_policy` (`E_POLICY_COMBINATION`) | truth table + rule text pinned to the Move source (0.0.9) |
 | Owned-pass counting | `ownsAccessNft` (all pages ≤ 100; usable passes only) | gateway-rust (own implementation, parity kept, undeployed); `seal_policies::nft_gate` (rejects exhausted) | `ownsAccessNft counts usable passes only by default`; the gateway-rust audit tracks its own parity |
 | `AccessVariant` parsing | `@variant` tag only; unknown → pass rejected | gateway-rust (does not parse it); Move enum | rendering pinned by the live `fetchAccessNftById` test (F1 fixed) |
 
@@ -945,16 +964,16 @@ longer exists (its builder was removed in 0.0.8), and the live per-parameter dri
 
 ## Section C — Test-coverage & hermetic/live split
 
-### C.1 Coverage grade — A (145/145; 98.37% statements, 95.2% branches, 100% functions, 99.52% lines; vitest 5.0.3, 2026-10-09)
+### C.1 Coverage grade — A (153/153; 98.39% statements, 95.29% branches, 100% functions, 99.52% lines; vitest 5.0.3, 2026-10-10)
 
 | Dimension | Assessment |
 | --- | --- |
 | Happy-path | covered: every builder (target + exact arguments), every parser, paging, event listing (RPC and indexer), abort formats, deployments, type names |
-| Error-path | covered: look-alike types, missing or mistyped fields, unsafe amounts, truncated addresses, oversized/non-JSON/mis-shaped indexer bodies, plain-http indexer, redirect and off-origin path, malformed indexer rows, page budget, unknown and prototype-key networks, missing `locked_commission`, unknown abort code, cyclic error chain, short nonce. **Missing:** abort codes 15 and 16 (F24) |
+| Error-path | covered: look-alike types, missing or mistyped fields, unsafe amounts, truncated addresses, oversized/non-JSON/mis-shaped indexer bodies, plain-http indexer, redirect and off-origin path, malformed indexer rows, page budget, unknown and prototype-key networks, missing `locked_commission`, unknown abort code, cyclic error chain, short nonce. abort codes 15 and 16, the Move-source constant comparison and the 16-row policy truth table (F24, 0.0.9) |
 | Boundary | covered: u64 limits (exact `bigint` counts), commission dust and cap, the 10× floor, `minimumPaidPriceMist` saturation, nonce below 8 bytes |
 | Security-relevant | strong on exact types, no truncation, fail-closed variant, exhausted-pass counting, strict event decode and on-chain layout drift (the live parts run weekly) |
 
-Uncovered lines (`vitest --coverage`, 2026-10-09): `aborts.ts:55`, `events.ts:374-375`, `gates.ts:26-28`,
+Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:374-375`, `gates.ts:26-28`,
 `json.ts:27-28,41`, `ownership.ts:13,36` and `ptb.ts:48` (all small guard branches). The `AccessBurned` /
 `GateMadeFree` decode and unknown-variant gaps of the baseline are covered (S1).
 
@@ -962,7 +981,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-09): `aborts.ts:55`, `events.ts:37
 
 | Layer | Files | Gating variable | In CI? |
 | --- | --- | --- | --- |
-| Unit (offline) | 8 files, 145 tests (`vitest.config.ts`) | — | yes |
+| Unit (offline) | 8 files, 153 tests (`vitest.config.ts`) | — | yes |
 | Integration (live testnet reads + ABI drift) | `tests/integration/{grpc-read,abi-drift}.integration.test.ts` | `GRPC_TESTNET=1` (plus optional `GRPC_TESTNET_URL`, `ACCESS_GATE_TESTNET_GATE_ID`, `ACCESS_GATE_TESTNET_OWNER`) | weekly (`live-read.yml`, no secrets) — not in the push/PR workflow; 47 passed, 3 skipped on 2026-10-09 |
 | End-to-end | — (consumers' e2e) | — | — |
 
@@ -982,7 +1001,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-09): `aborts.ts:55`, `events.ts:37
 
 ### pre-localnet
 
-- [x] strict type-check, lint and unit tests green (145) — 2026-10-09
+- [x] strict type-check, lint and unit tests green (153) — 2026-10-10 (145 on 2026-10-09)
 - [x] no secrets in source; installs clean; `npm audit` 0 — F23
 - [x] every builder and parser tested; no JSON-RPC; full-type matching — F17, F20
 - [x] untrusted parsers validate every field, failing closed — F1, F6 (RESOLVED 0.0.5, 0.0.6)
@@ -1032,7 +1051,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-09): `aborts.ts:55`, `events.ts:37
     test: F3).
   - The ownership semantics are shared with the gateways and `seal_policies` without a common machine-readable
     definition; the client's rule (usable passes only, unparsable rejected) is the reference, tested
-    here (F1, F2). The abort table is hand-mirrored (F24).
+    here (F1, F2). The abort table is compared with the Move source offline (F24).
 - **On-chain-truth boundary:**
   - Previews (`commissionForPrice`, `gateCommissionMist`, `minimumPaidPriceMist`) mirror the contract
     and are documented as such; the extremes now saturate or throw like the contract (F11). Exact-amount
@@ -1057,7 +1076,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-09): `aborts.ts:55`, `events.ts:37
 
 ## Normative requirements (MUST / MUST NOT)
 
-**Before the next release (0.0.9):**
+**Before the next release (0.0.9, done):**
 
 1. MUST represent a pass's variant without conflating "unlimited" with "unknown", and MUST reject an
    NFT whose variant cannot be parsed — **holds** (F1, 0.0.5).
@@ -1067,7 +1086,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-09): `aborts.ts:55`, `events.ts:37
    (F5, 0.0.6).
 4. MUST treat a missing Move field as malformed in every parser, `locked_commission` included — **holds**
    (F6, 0.0.6).
-5. MUST map every abort code of the published `access_gate` (1-16) to a message — **does not hold** (F24).
+5. MUST map every abort code of the published `access_gate` (1-16) to a message — **holds** (F24, 0.0.9).
 
 **Before mainnet:**
 
@@ -1117,8 +1136,8 @@ Uncovered lines (`vitest --coverage`, 2026-10-09): `aborts.ts:55`, `events.ts:37
   live suite), so hermetic tests use real renderings.
 - **S4** SHOULD add `engines.node` to match `AGENTS.md` (Node 24 LTS is the workspace target; `AGENTS.md` still says
   "Node.js >= 22"). Not done.
-- **S5** MAY generate the abort table and the builder table from the ABI at release time and diff them in CI
-  (complements F4; would have caught F24).
+- **S5** (partly done 0.0.9) the abort table is diffed against the `E_*` constants of the pinned Move source on every
+  run (F24); MAY still generate the builder table from the ABI at release time (complements F4).
 - **S6** SHOULD bound `listAccessGateEvents`' total scanned events per call (it is `maxPages × 50`
   today), and document the cost for client-side filtering.
 
@@ -1198,9 +1217,23 @@ Uncovered lines (`vitest --coverage`, 2026-10-09): `aborts.ts:55`, `events.ts:37
     baseline text still reads `^2.33.1`.
   - Pre-save consistency checklist re-run.
 
-## Pre-save consistency checklist (2026-10-09 re-verification)
+- 2026-10-10 — Fix wave on `main` after `b06e3ce`: version 0.0.9 (`commit pending`, not tagged or published).
+  - **F24 RESOLVED:** abort codes 15 and 16 with messages; offline comparison of the table with the `E_*`
+    constants of the pinned `access-gate-sui` source; `AGENTS.md`, `README.md`, `CLAUDE.md` corrected.
+  - **New in 0.0.9:** `validateGatePolicy` and the `buildCreateGateTx` guard (the client-side fix recorded for
+    access-gate-ui F12); new Section A row I17. Pre-v0.2 breaking: `buildCreateGateTx` now throws for an invalid
+    policy.
+  - Measured: vitest 153/153 (8 files); coverage 98.39 / 95.29 / 100 / 99.52; tsc, eslint, build, `npm audit` (0)
+    and `check:deployments` (`access-gate-sui@0.0.6`, ids `0xd7ddaa94…` / `PlatformConfig` `0x3f81489d…`) clean;
+    live read-only suite **47 passed, 3 skipped** (`GRPC_TESTNET=1 npm run test:integration`, run from the
+    sandbox, against the 2026-10-09 package); pack unchanged (no new shipped file).
+  - Section D: no unticked code gate remained; the two open boxes stay mainnet-blocked and maintainer-only.
+  - Consumers needing a bump to 0.0.9: access-gate-ui (F12 validation and the new messages); the rest take it
+    when next released.
 
-- [x] Section A ↔ findings — the only GAP row is I16 (F24, DEFERRED); I3, I6, I8-I13 and I15 are HOLDS beside
+## Pre-save consistency checklist (2026-10-09 re-verification, updated 2026-10-10)
+
+- [x] Section A ↔ findings — no GAP row remains (I16 closed by F24, 0.0.9); I3, I6, I8-I13 and I15-I17 are HOLDS beside
   RESOLVED findings.
 - [x] Finding header ↔ body — each RESOLVED finding's evidence describes what was done; the baseline
   recommendation is kept under a separate label.

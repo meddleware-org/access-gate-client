@@ -42,7 +42,10 @@ gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
   seal-ui). They count only usable passes and fail closed on an unknown variant; indexer data is never
   an input.
 - **Abort table.**
-  - `ACCESS_GATE_ABORTS` mirrors the `E_*` constants in `access_gate.move` (codes 1–14).
+  - `ACCESS_GATE_ABORTS` mirrors the `E_*` constants in `access_gate.move` (codes 1–16). `tests/aborts.test.ts` compares the table with the `E_*` constants of the pinned
+    `@meddleware/access-gate-sui` source, so a new or renumbered constant fails the offline suite.
+  - `validateGatePolicy` mirrors `new_gate_policy`'s rule (`E_POLICY_COMBINATION`); `buildCreateGateTx` applies it
+    before building. Change it together with the Move rule.
   - Every builder that touches a gate or consumes passes `platformConfigId` (the on-chain version gate).
   - `abortMessage` only claims aborts located in the `access_gate` module.
 - **`@mysten/sui` is the only runtime dependency.**
