@@ -13,25 +13,27 @@
     package is consumed by a Worker, but contains no Worker code.
 **Deployment status:**
 
-- npm `@meddleware/access-gate-client` **0.0.8** (`latest`), the 2026-10-09 release. Git tag `v0.0.8`
-  is at `b06e3ce`. The 2026-10-10 fix wave (**0.0.9**, `commit `dc8b089``, not yet tagged or published)
-  closes F24. (Baseline of this audit: 0.0.4 at `fc6e351`, published
-  2026-10-03 with an SLSA v1 provenance attestation.)
+- npm `@meddleware/access-gate-client` **0.0.9** (`latest`), released 2026-10-10 (published
+  2026-10-10T15:02Z; SLSA v1 provenance attestation present, checked 2026-10-18). Git tag `v0.0.9` is at
+  `1fed492` (code commit `dc8b089`; the later commit only records the hash in this audit). It closes F24.
+  0.0.8 (tag `v0.0.8` at `b06e3ce`) was the 2026-10-09 release. (Baseline of this audit: 0.0.4 at `fc6e351`,
+  published 2026-10-03 with an SLSA v1 provenance attestation.)
 - Records the **2026-10-09 testnet republication**: `access_gate`
   `0xd7ddaa94b74330979b2b618fc81206d160a264f1c9ca148a77fa2144301388c9`, `PlatformConfig`
   `0x3f81489df58233d96798f34ad44de325e1b4df7e4d615affe72ca181969ee7b5`, from
   `@meddleware/access-gate-sui` 0.0.6. The superseded `0xa55789…` package is now immutable (UpgradeCap
   burned 2026-10-09).
-- Consumed at `^0.0.8` (resolves exactly to the latest) by:
+- Consumed at `^0.0.9` (resolves exactly to the latest; bumped 2026-10-18, verified in `repos/*/package.json`) by:
   - access-gate-ui, dao-ui, treasury-ui, seal-ui, walrus-ui, token-deployer-ui;
   - walrus-relay, seal-client, sui-indexer;
-  - the docs site;
+  - the docs and dev sites;
   - **nft-gate/gateway-workers**, the live relay paywall, which uses `ownsAccessNft` for authorisation
     in ownership mode. It resolves **exactly 0.0.6** (`^0.0.6`, lockfile 0.0.6): that version already
     carries the usable-only ownership check and strict event decoding, but not the 0.0.7 consume and
-    abort hardening or the 2026-10-09 ids. The Worker takes the gate and NFT type from its own config,
-    so it does not depend on this package's ids. Bumping it to 0.0.8 is a gateway-repo item.
-**Review date:** 2026-10-03, re-verified 2026-10-09
+    abort hardening or the 2026-10-09 ids (still `^0.0.6` on 2026-10-18, although the Worker itself was
+    redeployed from `main` on 2026-10-10). The Worker takes the gate and NFT type from its own config,
+    so it does not depend on this package's ids. Bumping it to 0.0.9 is a gateway-repo item.
+**Review date:** 2026-10-03, re-verified 2026-10-09 · fix wave 2026-10-10 · release status 2026-10-18
 **Reviewer:** Internal review
 **Severity ceiling:** High.
   - The builders construct the PTBs users sign with SUI, so a wrong target or ID would send funds
@@ -41,7 +43,8 @@
 
   Realised ceiling at the 2026-10-03 baseline: **Medium** (F1, F2, both now RESOLVED). Realised
   ceiling at 2026-10-09: **Low** (F24); none open after the 2026-10-10 fix wave (0.0.9).
-**Status:** re-verified 2026-10-09 (first-pass baseline 2026-10-03)
+**Status:** re-verified 2026-10-09 (first-pass baseline 2026-10-03); fix wave 0.0.9 released 2026-10-10 and
+consumed at `^0.0.9` (2026-10-18)
 
 **Package manager / lockfile:** npm; `package-lock.json` committed (lockfileVersion 3)
 **Module format:** ESM (`"type": "module"`)
@@ -212,7 +215,7 @@ the read-indexer service; the consuming apps.
 | `npm audit --audit-level=high` | 0 vulnerabilities |
 | `npm run check:deployments` | `src/deployments.ts matches @meddleware/access-gate-sui@0.0.6` |
 | `npm pack --dry-run` | 25 files, 31.4 kB: `CHANGELOG.md`, `LICENSE`, `README.md`, `SECURITY.md`, `package.json`, `src/*.ts` (10), `dist/*.d.ts` (10); no tests, scripts or env files |
-| `npm view @meddleware/access-gate-client@0.0.8` | `latest`; SLSA v1 provenance attestation present |
+| `npm view @meddleware/access-gate-client@0.0.8` | `latest`; SLSA v1 provenance attestation present (2026-10-18: `latest` is 0.0.9, published 2026-10-10T15:02Z, attestation present) |
 | `GRPC_TESTNET=1 npm run test:integration` | **PASS 2026-10-09** against the 2026-10-09 testnet package: 47 passed, 3 skipped (cases that need an optional gate/owner env or an event kind with no event left on a pruning full node). The baseline run was impossible from its sandbox (egress). |
 
 The working tree was left clean (`coverage/` removed; `dist/` and `node_modules/` are git-ignored).
@@ -766,7 +769,7 @@ status, SDK text and node/wallet text formats, all tested.
 - `npm ci`, `npm audit --audit-level=high` and `check:deployments` in CI and publish.
 - Tag-gated (`v*`) with a tag == version check.
 - Idempotent publish; the npm client pinned (`11.20.0`); the release job runs the full CI workflow first; weekly Dependabot (npm, GitHub Actions).
-- OIDC `--provenance`, with the attestation verified for 0.0.4 and again for 0.0.8 (2026-10-09).
+- OIDC `--provenance`, with the attestation verified for 0.0.4, 0.0.8 (2026-10-09) and 0.0.9 (2026-10-18).
 - `files` whitelist (25 files in 0.0.8; the CI job asserts the list); an accurate `sideEffects: false` (no module has import-time effects).
 - `strict` + `noUncheckedIndexedAccess`.
 
@@ -874,10 +877,11 @@ or authorisation are affected (the chain still aborts).
 | `typescript` | — | `~6.0.3` | — |
 | `vitest` | — | `~5.0.2` | — |
 
-Consumers declare `^0.0.8` (10 repos: access-gate-ui, dao-ui, treasury-ui, seal-ui, walrus-ui,
-token-deployer-ui, walrus-relay, seal-client, sui-indexer, docs), which resolves to exactly the latest
-published version, as the policy requires. **nft-gate/gateway-workers declares `^0.0.6`** (exactly 0.0.6): it
-is behind the latest and carries the F1/F2 fixes but not 0.0.7/0.0.8; aligning it is a gateway-repo item.
+Consumers declare `^0.0.9` (11 repos, 2026-10-18: access-gate-ui, dao-ui, treasury-ui, seal-ui, walrus-ui,
+token-deployer-ui, walrus-relay, seal-client, sui-indexer, docs, dev), which resolves to exactly the latest
+published version, as the policy requires (`^0.0.8` on 2026-10-09). **nft-gate/gateway-workers declares `^0.0.6`**
+(exactly 0.0.6): it is behind the latest and carries the F1/F2 fixes but not 0.0.7 to 0.0.9; aligning it is a
+gateway-repo item.
 
 ### B.2 Publish authority, capabilities & secret custody
 
@@ -892,7 +896,7 @@ is behind the latest and carries the F1/F2 fixes but not 0.0.7/0.0.8; aligning i
 | --- | --- | --- |
 | Actions pinned | Yes | SHA pins in both workflows |
 | Least privilege | Yes | `contents: read`; `id-token: write` only in `publish-npm` |
-| OIDC trusted publishing | Yes | provenance attestation on 0.0.4 and 0.0.8 |
+| OIDC trusted publishing | Yes | provenance attestation on 0.0.4, 0.0.8 and 0.0.9 |
 | Tag-gated, idempotent publish | Yes | `v*`; tag == version; registry probe + conflict tolerance |
 | Container images | N/A | — |
 | Secrets never echoed | Yes | none used |
@@ -928,7 +932,7 @@ npm client pinned in publish. All hold.
 | --- | --- | --- | --- | --- |
 | `src/deployments.ts` (generated) | testnet | `0xd7ddaa94…88c9` / `0xd7ddaa94…88c9` / `0x3f81489d…e7b5` | original-id / published-at / PlatformConfig | Y — `check:deployments` against `access-gate-sui@0.0.6` (`Published.toml` version 1 = latest record, commit `7906954`); the live `publishedAt`-is-latest check passed 2026-10-09 |
 | `tests/integration/abi-drift.integration.test.ts` | testnet | asserts `publishedAt` is the latest of `listPackageVersions(originalId)` | live | Y — passed 2026-10-09 (weekly in CI) |
-| Consumers (11 repos incl. gateway-workers) | — | no ID literals; take `accessGateDeployment(network)` (per their `CLAUDE.md`) | — | Y by construction |
+| Consumers (12 repos incl. gateway-workers) | — | no ID literals; take `accessGateDeployment(network)` (per their `CLAUDE.md`) | — | Y by construction |
 
 ### B.SC-2 Coupling table
 
@@ -1061,14 +1065,15 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
     is a live full-node read; the bar set by F1 and F2 is now met.
 - **Deployment readiness:** Section D.
 - **Chain-access layering & on-chain ID/ABI coupling (ADR-0001):**
-  - This **is** the domain client for `access_gate`. All 11 consumers delegate to it, and none holds
+  - This **is** the domain client for `access_gate`. All 12 consumers delegate to it, and none holds
     ID literals.
   - Call targets use `publishedAt` and types/events use `originalId`, with both recorded.
   - Drift testing covers functions (per parameter), structs and events, live and weekly (F3, F4).
   - Move git dependencies: N/A.
   - **Pre-v0.2 policy:** F1, F2, F13 and F9 changed exported shapes without compatibility shims
-    (0.0.5-0.0.7), with consumers bumped in step; 0.0.8 removed `buildSetSoulboundTx` the same way. The
-    next release is 0.0.9.
+    (0.0.5-0.0.7), with consumers bumped in step; 0.0.8 removed `buildSetSoulboundTx` the same way. 0.0.9
+    (released 2026-10-10) made `buildCreateGateTx` throw for an invalid policy; its consumers were bumped
+    2026-10-18.
   - **Moving ids.** The 2026-10-09 republication changed every id; `deployments.ts` was regenerated from
     `@meddleware/access-gate-sui@0.0.6` and checked by `check:deployments` and the live suite.
 
@@ -1176,8 +1181,8 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
   is unavailable. This affects display only.
 - **Shared-SDK fragility.** One host-level `@mysten/sui` copy is now guaranteed by the peer declaration (F9); a
   host that ignores the peer warning still gets two copies.
-- **Gateway lag.** The live Worker resolves client 0.0.6 and misses the 0.0.7 hardening; the repo is the
-  gateway's, so the bump is theirs to schedule.
+- **Gateway lag.** The live Worker resolves client 0.0.6 (checked 2026-10-18) and misses the 0.0.7 hardening;
+  the repo is the gateway's, so the bump is theirs to schedule.
 - **Unpublished mainnet.** Every id is testnet; the mainnet record, custody and review are maintainer items.
 
 ---
@@ -1229,7 +1234,12 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
     sandbox, against the 2026-10-09 package); pack unchanged (no new shipped file).
   - Section D: no unticked code gate remained; the two open boxes stay mainnet-blocked and maintainer-only.
   - Consumers needing a bump to 0.0.9: access-gate-ui (F12 validation and the new messages); the rest take it
-    when next released.
+    when next released. (Done 2026-10-18, see the last entry.)
+- 2026-10-18 — released (0.0.9), consumers bumped (access-gate-ui, dao-ui, treasury-ui, seal-ui, walrus-ui,
+  token-deployer-ui, walrus-relay, seal-client, sui-indexer, docs, dev: all `^0.0.9`). `npm view` shows
+  `@meddleware/access-gate-client` 0.0.9 as `latest`, published 2026-10-10T15:02Z, with SLSA v1 provenance
+  (`dist.attestations`); tag `v0.0.9` at `1fed492`. Not bumped: nft-gate/gateway-workers (`^0.0.6`, lockfile 0.0.6; a
+  gateway-repo item). No Section D box waited only on the release (the two open ones are mainnet-blocked).
 
 ## Pre-save consistency checklist (2026-10-09 re-verification, updated 2026-10-10)
 
