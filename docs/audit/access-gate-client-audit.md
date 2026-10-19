@@ -1240,6 +1240,8 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
   `@meddleware/access-gate-client` 0.0.9 as `latest`, published 2026-10-10T15:02Z, with SLSA v1 provenance
   (`dist.attestations`); tag `v0.0.9` at `1fed492`. Not bumped: nft-gate/gateway-workers (`^0.0.6`, lockfile 0.0.6; a
   gateway-repo item). No Section D box waited only on the release (the two open ones are mainnet-blocked).
+- 2026-10-19 — dependency-bot status checked (read-only): `.github/dependabot.yml` carries the `ignore` rules and the repository has no open Dependabot pull requests (`gh pr list`, 2026-10-19). Versions, findings and gates were not re-examined in this pass.
+  - Dependabot policy encoded in .github/dependabot.yml (majors declined); open PRs merged 2026-10-19
 
 ## Pre-save consistency checklist (2026-10-09 re-verification, updated 2026-10-10)
 
