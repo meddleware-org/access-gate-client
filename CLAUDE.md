@@ -30,6 +30,12 @@ gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
 - **The indexer is display-only.**
   - `readIndexerEvents` is the one indexer reader (seal-client uses it too): https only (loopback
     http allowed), a timeout, a 1 MiB body cap before parsing, and a checked page shape.
+  - A **head page** (no `before`) must be fresh: `polledAt` (epoch ms, served by sui-indexer on head pages only)
+    present, a safe integer, no older than `STALE_AFTER_MS` (60 s = 4 × the indexer's 15 s poll; override with
+    `IndexerSource.staleAfterMs`) by `Date.now()`, and at most `CLOCK_SKEW_TOLERANCE_MS` (5 min) in the future.
+    Otherwise `readIndexerEvents` throws and the callers fall back to the full node exactly as for a network
+    failure (sui-indexer audit F19). Pages with `before` are immutable history: never checked. The check
+    lives here only; seal-client inherits it through this function.
   - `listAccessGateEvents` decodes and type-checks indexer rows exactly like full-node events.
   - It falls back to the full node for a first page.
   - Nothing here uses indexer data to authorise.
@@ -76,4 +82,6 @@ gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
 - **Indexer contract.** `GET /v1/{network}/access-gate/events?kinds&gate&before&limit` returns:
   - `events` — full-node event entries, verbatim, with `bcs` in base64;
   - `cursor`;
-  - `indexedFromCheckpoint`.
+  - `indexedFromCheckpoint`;
+  - `polledAt` (head pages only; epoch ms of the last successful poll, `null` before any poll) — the client
+    treats a missing, null or old value as unavailable (see above).

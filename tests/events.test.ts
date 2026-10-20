@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { bcs } from '@mysten/sui/bcs'
 import { normalizeSuiAddress, toBase64 } from '@mysten/sui/utils'
 import {
@@ -8,7 +8,10 @@ import {
   listAccessGateEvents,
   parseAccessGateEvent,
   readIndexerEvents,
+  STALE_AFTER_MS,
+  CLOCK_SKEW_TOLERANCE_MS,
 } from '../src/events.js'
+import type { ListAccessGateEventsOptions } from '../src/events.js'
 import type { CoreEventEntry, EventsClient } from '../src/types.js'
 
 const PKG = '0xa1'
@@ -258,7 +261,7 @@ describe('listAccessGateEvents (indexer)', () => {
   it('reads from the indexer and keeps only this package\'s events of the asked kinds', async () => {
     const fake = { ...row(mintedEntry(GATE_A)), eventType: `${LOOKALIKE}::access_gate::AccessMintedEvent` }
     const fetchFn = vi.fn(async () =>
-      Response.json({ events: [row(consumedEntry(GATE_A)), row(mintedEntry(GATE_A)), fake], cursor: 'c1', indexedFromCheckpoint: '42' }),
+      Response.json({ events: [row(consumedEntry(GATE_A)), row(mintedEntry(GATE_A)), fake], cursor: 'c1', indexedFromCheckpoint: '42', polledAt: Date.now() }),
     )
     const client = eventsClient([[]])
     const page = await listAccessGateEvents(client, {
@@ -356,23 +359,26 @@ describe('indexer rows are untrusted (display-only)', () => {
 
 describe('readIndexerEvents (shared indexer reader)', () => {
   const respond = (body: string, status = 200) => vi.fn(async () => new Response(body, { status }))
+  /** A fresh head page body (the checks below are about the other fields). */
+  const head = (extra: Record<string, unknown> = {}) => JSON.stringify({ events: [], cursor: null, polledAt: Date.now(), ...extra })
   const source = (url: string, fetchFn: ReturnType<typeof vi.fn>) => ({ url, network: 'testnet', fetch: fetchFn as unknown as typeof fetch })
 
   it('builds the URL from parsed parts and drops undefined params', async () => {
-    const fetchFn = respond(JSON.stringify({ events: [], cursor: null, indexedFromCheckpoint: '7' }))
+    const polledAt = Date.now()
+    const fetchFn = respond(JSON.stringify({ events: [], cursor: null, indexedFromCheckpoint: '7', polledAt }))
     const page = await readIndexerEvents(source('https://idx.example/base', fetchFn), 'v1/testnet/x', { a: '1', b: undefined })
-    expect(page).toEqual({ events: [], cursor: null, indexedFromCheckpoint: '7' })
+    expect(page).toEqual({ events: [], cursor: null, indexedFromCheckpoint: '7', polledAt })
     expect(String((fetchFn.mock.calls[0] as unknown[])[0])).toBe('https://idx.example/base/v1/testnet/x?a=1')
   })
 
   it('refuses a plain-http indexer except on loopback', async () => {
-    const fetchFn = respond(JSON.stringify({ events: [], cursor: null }))
+    const fetchFn = respond(head())
     await expect(readIndexerEvents(source('http://idx.example', fetchFn), 'v1', {})).rejects.toThrow(/https/)
     await expect(readIndexerEvents(source('http://127.0.0.1:8080', fetchFn), 'v1', {})).resolves.toMatchObject({ events: [] })
   })
 
   it('refuses a path that leaves the indexer origin, and redirects', async () => {
-    const fetchFn = respond(JSON.stringify({ events: [], cursor: null }))
+    const fetchFn = respond(head())
     for (const path of ['//evil.example/x', 'https://evil.example/x', '/abs', 'http:foo', 'a\\b']) {
       await expect(readIndexerEvents(source('https://idx.example', fetchFn), path, {})).rejects.toThrow(/relative|origin/)
     }
@@ -392,7 +398,7 @@ describe('readIndexerEvents (shared indexer reader)', () => {
     const fetchFn = vi.fn(async () => new Response(stream, { status: 200 }))
     await expect(readIndexerEvents(source('https://idx.example', fetchFn), 'v1', {})).rejects.toThrow(/too large/)
     // Multi-byte text is counted in bytes, not UTF-16 units.
-    const wide = respond(JSON.stringify({ events: [], cursor: null, pad: '€'.repeat(400_000) }))
+    const wide = respond(head({ pad: '€'.repeat(400_000) }))
     await expect(readIndexerEvents(source('https://idx.example', wide), 'v1', {})).rejects.toThrow(/too large/)
   })
 
@@ -401,10 +407,148 @@ describe('readIndexerEvents (shared indexer reader)', () => {
     await expect(readIndexerEvents(source(url, respond('x'.repeat((1 << 20) + 1))), 'v1', {})).rejects.toThrow(/too large/)
     await expect(readIndexerEvents(source(url, respond('<html>')), 'v1', {})).rejects.toThrow(/not JSON/)
     await expect(readIndexerEvents(source(url, respond('{}')), 'v1', {})).rejects.toThrow(/no events list/)
-    await expect(readIndexerEvents(source(url, respond('{"events":[],"cursor":5}')), 'v1', {})).rejects.toThrow(/cursor/)
+    await expect(readIndexerEvents(source(url, respond(head({ cursor: 5 }))), 'v1', {})).rejects.toThrow(/cursor/)
     await expect(
-      readIndexerEvents(source(url, respond('{"events":[],"cursor":null,"indexedFromCheckpoint":1}')), 'v1', {}),
+      readIndexerEvents(source(url, respond(head({ indexedFromCheckpoint: 1 }))), 'v1', {}),
     ).rejects.toThrow(/checkpoint/)
     await expect(readIndexerEvents(source(url, respond('', 502)), 'v1', {})).rejects.toThrow(/502/)
+  })
+})
+
+describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
+  const INDEXER = 'https://indexer.example'
+  const NOW = 1_800_000_000_000
+  const row = (e: CoreEventEntry) => ({ ...e, bcs: toBase64(e.bcs as Uint8Array) })
+  const serving = (body: Record<string, unknown>) =>
+    vi.fn(async () => Response.json({ events: [row(mintedEntry(GATE_A))], cursor: 'c1', ...body }))
+  const list = (fetchFn: ReturnType<typeof vi.fn>, extra: Partial<ListAccessGateEventsOptions> = {}) => {
+    const client = eventsClient([[mintedEntry(GATE_A)]])
+    const page = listAccessGateEvents(client, {
+      originalId: PKG,
+      indexer: { url: INDEXER, network: 'testnet', fetch: fetchFn as unknown as typeof fetch },
+      ...extra,
+    })
+    return { client, page }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(NOW)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('uses a fresh head page', async () => {
+    const { client, page } = list(serving({ polledAt: NOW - 15_000 }))
+    const p = await page
+    expect(p.source).toBe('indexer')
+    expect(p.indexerError).toBeUndefined()
+    expect(client.core.listEvents).not.toHaveBeenCalled()
+  })
+
+  it('uses a page exactly STALE_AFTER_MS old, and falls back one millisecond later', async () => {
+    expect(STALE_AFTER_MS).toBe(60_000)
+    expect((await list(serving({ polledAt: NOW - STALE_AFTER_MS })).page).source).toBe('indexer')
+    const { client, page } = list(serving({ polledAt: NOW - STALE_AFTER_MS - 1 }))
+    const p = await page
+    expect(p.source).toBe('rpc')
+    expect(p.indexerError).toMatch(/stale/)
+    expect(client.core.listEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to the full node when the head page is stale', async () => {
+    const { client, page } = list(serving({ polledAt: NOW - 10 * 60_000 }))
+    const p = await page
+    expect(p.source).toBe('rpc')
+    expect(p.events).toHaveLength(1)
+    expect(p.indexerError).toMatch(/stale: last poll 600 s ago/)
+    expect(client.core.listEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back when polledAt is null or missing (the indexer has not polled yet)', async () => {
+    for (const body of [{ polledAt: null }, {}]) {
+      const { client, page } = list(serving(body))
+      const p = await page
+      expect(p.source).toBe('rpc')
+      expect(p.indexerError).toMatch(/no polledAt/)
+      expect(client.core.listEvents).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('falls back when polledAt is not an epoch-ms number', async () => {
+    for (const polledAt of ['1800000000000', 0, -5, 1.5, true, {}, NaN, Number.MAX_SAFE_INTEGER + 2]) {
+      const { client, page } = list(serving({ polledAt }))
+      const p = await page
+      expect(p.source, String(polledAt)).toBe('rpc')
+      expect(p.indexerError).toMatch(/polledAt/)
+      expect(client.core.listEvents).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('tolerates a polledAt in the future up to CLOCK_SKEW_TOLERANCE_MS, and falls back beyond it', async () => {
+    expect(CLOCK_SKEW_TOLERANCE_MS).toBe(300_000)
+    expect((await list(serving({ polledAt: NOW + 60_000 })).page).source).toBe('indexer')
+    expect((await list(serving({ polledAt: NOW + CLOCK_SKEW_TOLERANCE_MS })).page).source).toBe('indexer')
+    const { client, page } = list(serving({ polledAt: NOW + CLOCK_SKEW_TOLERANCE_MS + 1 }))
+    const p = await page
+    expect(p.source).toBe('rpc')
+    expect(p.indexerError).toMatch(/future/)
+    expect(client.core.listEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not check staleness on an older page (immutable history), which carries no polledAt', async () => {
+    const fetchFn = serving({})
+    const client = eventsClient([[]])
+    const page = await listAccessGateEvents(client, {
+      originalId: PKG,
+      cursor: { source: 'indexer', value: 'c0' },
+      indexer: { url: INDEXER, network: 'testnet', fetch: fetchFn as unknown as typeof fetch },
+    })
+    expect(page.source).toBe('indexer')
+    expect(client.core.listEvents).not.toHaveBeenCalled()
+    expect(new URL(String((fetchFn.mock.calls[0] as unknown[])[0])).searchParams.get('before')).toBe('c0')
+  })
+
+  it('a polledAt on an older page is ignored, whatever its age', async () => {
+    const fetchFn = serving({ polledAt: NOW - 24 * 3_600_000 })
+    const client = eventsClient([[]])
+    const page = await listAccessGateEvents(client, {
+      originalId: PKG,
+      cursor: { source: 'indexer', value: 'c0' },
+      indexer: { url: INDEXER, network: 'testnet', fetch: fetchFn as unknown as typeof fetch },
+    })
+    expect(page.source).toBe('indexer')
+  })
+
+  it('staleAfterMs overrides the limit; an invalid value is ignored', async () => {
+    const polledAt = NOW - 30_000
+    const tight = list(serving({ polledAt }), {
+      indexer: { url: INDEXER, network: 'testnet', staleAfterMs: 10_000, fetch: serving({ polledAt }) as unknown as typeof fetch },
+    })
+    expect((await tight.page).source).toBe('rpc')
+    const loose = list(serving({ polledAt: NOW - 120_000 }), {
+      indexer: { url: INDEXER, network: 'testnet', staleAfterMs: 180_000, fetch: serving({ polledAt: NOW - 120_000 }) as unknown as typeof fetch },
+    })
+    expect((await loose.page).source).toBe('indexer')
+    for (const staleAfterMs of [0, -1, NaN, Infinity]) {
+      const f = serving({ polledAt: NOW - STALE_AFTER_MS - 1 })
+      const bad = list(f, { indexer: { url: INDEXER, network: 'testnet', staleAfterMs, fetch: f as unknown as typeof fetch } })
+      expect((await bad.page).source, String(staleAfterMs)).toBe('rpc')
+    }
+  })
+
+  it('readIndexerEvents throws on a stale head page and returns polledAt on a fresh one', async () => {
+    const src = (body: Record<string, unknown>) => ({
+      url: INDEXER,
+      network: 'testnet',
+      fetch: (async () => Response.json({ events: [], cursor: null, ...body })) as unknown as typeof fetch,
+    })
+    await expect(readIndexerEvents(src({ polledAt: NOW - 61_000 }), 'v1/x', {})).rejects.toThrow(/stale/)
+    await expect(readIndexerEvents(src({ polledAt: null }), 'v1/x', { before: undefined })).rejects.toThrow(/stale/)
+    await expect(readIndexerEvents(src({ polledAt: NOW }), 'v1/x', {})).resolves.toMatchObject({ polledAt: NOW })
+    // `before` marks history: no check, no polledAt in the result.
+    const old = await readIndexerEvents(src({}), 'v1/x', { before: 'c0' })
+    expect(old).not.toHaveProperty('polledAt')
   })
 })

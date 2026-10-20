@@ -70,6 +70,8 @@ export {
   eventGateId,
   listAccessGateEvents,
   readIndexerEvents,
+  STALE_AFTER_MS,
+  CLOCK_SKEW_TOLERANCE_MS,
 } from './events.js'
 export type {
   EventCursor,

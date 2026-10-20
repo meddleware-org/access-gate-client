@@ -256,8 +256,28 @@ export interface IndexerSource {
   network: string
   /** Give up and fall back to the full node after this long (default 3000 ms). */
   timeoutMs?: number
+  /**
+   * A head page (no `before`) whose `polledAt` is older than this is treated as unavailable
+   * (default {@link STALE_AFTER_MS}). A value that is not a positive finite number is ignored.
+   */
+  staleAfterMs?: number
   fetch?: typeof fetch
 }
+
+/**
+ * How old a head page's `polledAt` may be before the indexer counts as unavailable: 4 poll
+ * intervals of the indexer's default 15 s. A stuck ingest still answers `200` with frozen data;
+ * this is how the client notices.
+ */
+export const STALE_AFTER_MS = 60_000
+
+/**
+ * How far in the future a head page's `polledAt` may be and still count as fresh. The comparison
+ * uses the client's own clock, so a client clock that runs behind the indexer's must not make a
+ * healthy indexer look broken. A client clock that runs ahead by more than the stale limit
+ * makes every head page look stale: the client then reads the full node, which is safe.
+ */
+export const CLOCK_SKEW_TOLERANCE_MS = 300_000
 
 export interface ListAccessGateEventsOptions {
   originalId: string
@@ -403,6 +423,8 @@ export interface IndexerEventsPage {
   cursor: string | null
   /** Oldest checkpoint the indexer covers. */
   indexedFromCheckpoint?: string
+  /** Head pages only: epoch ms of the indexer's last successful poll (already checked for staleness). */
+  polledAt?: number
 }
 
 /**
@@ -414,9 +436,15 @@ export interface IndexerEventsPage {
  * `path` must be relative to the indexer URL (no scheme, no leading `//`), redirects are refused and
  * the body is size-capped while it is read.
  *
+ * A head page (no `before` param) must be fresh: its `polledAt` (epoch ms of the indexer's last
+ * successful poll) has to be a number no older than `indexer.staleAfterMs` ({@link STALE_AFTER_MS}),
+ * judged by this machine's clock; one up to {@link CLOCK_SKEW_TOLERANCE_MS} in the future counts as
+ * fresh. Older pages (with `before`) are immutable history and are not checked.
+ *
  * @throws {Error} if the URL is not `https:` (`http:` only for a loopback host), `path` leaves the
  *   indexer's origin, the request fails, is redirected or times out, the status is not 2xx, or the body
- *   is oversized, not JSON or not an event page.
+ *   is oversized, not JSON or not an event page, or a head page is stale (`polledAt` missing, null,
+ *   old, or too far in the future).
  */
 export async function readIndexerEvents(
   indexer: IndexerSource,
@@ -457,7 +485,26 @@ export async function readIndexerEvents(
   if (cursor !== null && typeof cursor !== 'string') throw new Error('indexer cursor is not a string')
   const from = b.indexedFromCheckpoint
   if (from !== undefined && typeof from !== 'string') throw new Error('indexer checkpoint is not a string')
-  return { events: b.events as CoreEventEntry[], cursor, indexedFromCheckpoint: from }
+  const polledAt = params.before ? undefined : checkFresh(b.polledAt, indexer.staleAfterMs ?? STALE_AFTER_MS)
+  return {
+    events: b.events as CoreEventEntry[],
+    cursor,
+    indexedFromCheckpoint: from,
+    ...(polledAt === undefined ? {} : { polledAt }),
+  }
+}
+
+/** The head page's `polledAt` when it is a fresh epoch-ms number; otherwise throws (the indexer counts as unavailable). */
+function checkFresh(polledAt: unknown, staleAfterMs: number): number {
+  const limit = Number.isFinite(staleAfterMs) && staleAfterMs > 0 ? staleAfterMs : STALE_AFTER_MS
+  if (polledAt === undefined || polledAt === null) throw new Error('indexer is stale: no polledAt on the head page')
+  if (typeof polledAt !== 'number' || !Number.isSafeInteger(polledAt) || polledAt <= 0) {
+    throw new Error('indexer polledAt is not an epoch-ms number')
+  }
+  const age = Date.now() - polledAt
+  if (age > limit) throw new Error(`indexer is stale: last poll ${Math.round(age / 1000)} s ago`)
+  if (-age > CLOCK_SKEW_TOLERANCE_MS) throw new Error('indexer polledAt is too far in the future')
+  return polledAt
 }
 
 /** True if `v` has every field of a {@link CoreEventEntry} with the right primitive type. */

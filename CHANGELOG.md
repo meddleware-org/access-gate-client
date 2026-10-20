@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.10] - 2026-10-20
+
+### Added
+
+- `readIndexerEvents` treats a stale head page as unavailable (sui-indexer audit F19): a page without `before` whose
+  `polledAt` is missing, `null`, not an epoch-ms integer or older than `STALE_AFTER_MS` (60 s) throws, so
+  `listAccessGateEvents` (and seal-client's `listSealedContent`) fall back to the full node and set `indexerError`.
+  A `polledAt` up to `CLOCK_SKEW_TOLERANCE_MS` (5 min) in the future counts as fresh. Pages with `before` are not
+  checked. New exports `STALE_AFTER_MS`, `CLOCK_SKEW_TOLERANCE_MS`; new optional `IndexerSource.staleAfterMs`;
+  `IndexerEventsPage.polledAt` (head pages).
+
+### Changed
+
+- A head page from an indexer that does not serve `polledAt` is now unavailable (sui-indexer serves it since 0.0.5).
+
 ## [0.0.9] - 2026-10-10
 
 ### Added

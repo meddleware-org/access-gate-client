@@ -81,6 +81,14 @@ page.cursor // pass back as `cursor` for older events
 - Events are decoded from their **BCS bytes**, which are the same on every transport.
 - With `indexer`, the first page is read from a read-indexer. If the indexer fails or takes longer
   than 3 s, the page comes from the full node instead, and `indexerError` says why.
+- A **stale** head page counts as unavailable, like a failure. The indexer stamps head pages with
+  `polledAt` (epoch ms of its last successful poll). If it is missing, `null` (no poll yet) or older than
+  `STALE_AFTER_MS` (60 s, 4 poll intervals of 15 s) by this machine's clock, the first page comes from the
+  full node and `indexerError` says `indexer is stale…`. Override per call with `indexer.staleAfterMs`.
+  A `polledAt` up to `CLOCK_SKEW_TOLERANCE_MS` (5 min) in the future still counts as fresh, so a client clock
+  that runs behind does not hide a healthy indexer; one further ahead falls back. A client clock more
+  than 60 s ahead makes every head page look stale (the full node answers: safe, but the indexer is
+  unused). Older pages (with a cursor) are immutable history and are not checked.
 - A cursor stays with the source that issued it.
 - Indexer rows are decoded and type-checked like full-node events. The indexer URL must be `https:`
   (`http:` only for a loopback host); `readIndexerEvents` is the shared reader.

@@ -18,6 +18,9 @@
   `1fed492` (code commit `dc8b089`; the later commit only records the hash in this audit). It closes F24.
   0.0.8 (tag `v0.0.8` at `b06e3ce`) was the 2026-10-09 release. (Baseline of this audit: 0.0.4 at `fc6e351`,
   published 2026-10-03 with an SLSA v1 provenance attestation.)
+- Working tree 2026-10-20: version **0.0.10** (local commit, not tagged or published) adds the stale-head-page check
+  (F25, sui-indexer F19). Consumers still resolve 0.0.9 until it is released and they are bumped (see the
+  2026-10-20 log entry).
 - Records the **2026-10-09 testnet republication**: `access_gate`
   `0xd7ddaa94b74330979b2b618fc81206d160a264f1c9ca148a77fa2144301388c9`, `PlatformConfig`
   `0x3f81489df58233d96798f34ad44de325e1b4df7e4d615affe72ca181969ee7b5`, from
@@ -124,6 +127,10 @@ closed by 0.0.5-0.0.8, and F24 by 0.0.9 (see the re-verification log):
    package adds `E_POLICY_COMBINATION` (15) and `E_USES_KIND_IMMUTABLE` (16). The table now covers 1-16 and is
    compared with the Move source offline; `validateGatePolicy` and `buildCreateGateTx` refuse an invalid
    policy before a transaction is built; one `AGENTS.md` row is corrected.
+5. **F25 (Low, RESOLVED in 0.0.10 on 2026-10-20).** The indexer reader ignored the freshness field `polledAt`
+   that sui-indexer serves on head pages, so a stuck indexer that still answered `200` showed frozen history.
+   `readIndexerEvents` now treats a missing, null or older-than-60-s `polledAt` on a head page as unavailable
+   and the existing fallback to the full node runs (sui-indexer audit F19; seal-client inherits it).
 
 Mainnet remains unpublished, so the pre-mainnet gates that need a mainnet record or an external review
 stay open in Section D.
@@ -141,7 +148,7 @@ that come from `@meddleware/access-gate-sui`.
 | Caller (app / gateway) | builder inputs (IDs, amounts, recipient, nonce), network name, the client instance | build PTBs a wallet signs; read state | `toU64`, `toAddress`, exact types; `Object.hasOwn` network lookup (F5, fixed 0.0.6); nonce length and soulbound/type agreement checked before signing (F10) |
 | Wallet / signer | signs whatever PTB is built | — | out of scope (wallet-adapter) |
 | Full node (caller's `SuiGrpcClient`) | object JSON, owned-object pages, events (BCS) | lie or withhold; change JSON rendering | exact-type checks; fail-closed parsers (F1, F6 fixed); strict event decode (F3); paging bound |
-| Read-indexer (optional) | event rows (BCS base64), cursor | serve wrong, stale or oversized rows; redirect | https only, relative same-origin `path`, `redirect: 'error'`, `no-store`, 3 s timeout, 1 MiB cap counted in bytes while streaming (F7), shape check, per-row decode + type check; display only; a bad row is skipped and counted in `invalidRows` (F8) |
+| Read-indexer (optional) | event rows (BCS base64), cursor, `polledAt` on head pages | serve wrong, stale or oversized rows; redirect | a head page whose `polledAt` is missing, null, older than 60 s or more than 5 min in the future is unavailable (F25); https only, relative same-origin `path`, `redirect: 'error'`, `no-store`, 3 s timeout, 1 MiB cap counted in bytes while streaming (F7), shape check, per-row decode + type check; display only; a bad row is skipped and counted in `invalidRows` (F8) |
 | `@meddleware/access-gate-sui` npm package | `Published.toml` / `deployments.json` → the IDs every builder targets | redirect every PTB to another package if tampered | exact devDependency pin `0.0.6`; npm provenance on that package; `check:deployments` in CI; HEX_ID validation |
 | npm registry / dependency authors | runtime (`@mysten/sui`) and dev toolchain | ship altered code | lockfile; `npm audit` in CI and publish; OIDC provenance on publish |
 | Embedding host (dashboard + several tools) | the `@mysten/sui` copy in the tree | duplicate copies → `Transaction` / type mismatch | `@mysten/sui` is a peer dependency (`^2.33.2`), so the host supplies the one copy (F9, fixed 0.0.6); `npm ls --all` in CI |
@@ -209,7 +216,7 @@ the read-indexer service; the consuming apps.
 | Command | Result |
 | --- | --- |
 | `npm ci` | clean; 0 vulnerabilities (baseline) |
-| `npx vitest run` | **153 passed** (8 files, 2026-10-10, 0.0.9); 145 on 2026-10-09; baseline 111 (7 files) |
+| `npx vitest run` | **163 passed** (8 files, 2026-10-20, 0.0.10); 153 on 2026-10-10 (0.0.9); 145 on 2026-10-09; baseline 111 (7 files) |
 | `npx vitest run --coverage` (coverage plugin installed `--no-save`; no manifest change) | 98.39% statements, 95.29% branches, 100% functions, 99.52% lines (2026-10-10; baseline 97.37 / 92.71 / 100 / 98.57). Uncovered: `aborts.ts:65`, `events.ts:374-375`, `gates.ts:26-28`, `json.ts:27-28,41`, `ownership.ts:13,36`, `ptb.ts:48` |
 | `npx tsc --noEmit` / `npx eslint .` | clean / clean |
 | `npm audit --audit-level=high` | 0 vulnerabilities |
@@ -817,6 +824,46 @@ or authorisation are affected (the chain still aborts).
   validator.
 - Found at the 2026-10-09 re-verification.
 
+### F25 — A stuck indexer that still answers `200` shows frozen history (the client ignored `polledAt`)
+
+**Severity:** Low   **Disposition:** RESOLVED (0.0.10, 2026-10-20, commit pending; closes sui-indexer audit F19)
+**Where:** `src/events.ts::readIndexerEvents` (the shared indexer reader; `listAccessGateEvents` and seal-client's
+`listSealedContent` call it).
+
+**Issue:**
+
+- sui-indexer stamps every head page with `polledAt` (epoch ms of its last successful poll, `null` before the
+  first). The reader checked the body's shape but never that field, so an indexer whose ingest was stuck kept
+  answering `200` and the apps showed frozen history until it recovered. The full-node fallback ran on errors
+  and timeouts only.
+
+**Impact:** stale display data for as long as an ingest failure lasts. Display only: no funds or access are
+affected (I10).
+
+**Remediation / evidence (2026-10-20, 0.0.10, commit pending):**
+
+- A page without `before` (a head page) must carry a `polledAt` that is a positive safe integer and no older than
+  `STALE_AFTER_MS` = 60 000 ms (4 × the indexer's default 15 s poll), by the client's `Date.now()`. A
+  missing, `null`, mistyped or old value throws `indexer is stale…`; the callers treat it exactly like a network
+  failure (first page falls back to the full node and `indexerError` says why). Overridable per call with
+  `IndexerSource.staleAfterMs` (a non-positive or non-finite value is ignored). Pages with `before` are immutable
+  history on the indexer and are not checked.
+- Clock skew: the comparison uses the client's clock. A `polledAt` up to `CLOCK_SKEW_TOLERANCE_MS` = 300 000 ms
+  in the future counts as fresh (a client clock that runs behind must not hide a healthy indexer); further ahead
+  is unavailable. A client clock more than 60 s ahead makes every head page look stale, so it reads the full
+  node: safe, but the indexer goes unused. The server's own clock is not trusted for anything else.
+- Every other check is unchanged: https only (loopback http), `redirect: 'error'`, `no-store`, the timeout, the
+  1 MiB cap counted in bytes, field validation, per-row decode.
+- Tests (`tests/events.test.ts`, *a stale head page counts as unavailable (sui-indexer F19)*, with a faked
+  clock): fresh page used; exactly 60 s used and 60 s + 1 ms falls back (the `listEvents` spy proves the RPC
+  fallback ran); stale, `null` and missing `polledAt` fall back; non-number values (string, 0, negative, fraction,
+  boolean, object, NaN, unsafe) fall back; +60 s and +5 min used, +5 min + 1 ms falls back; an older page ignores
+  staleness and carries no `polledAt`; `staleAfterMs` override and invalid values; `readIndexerEvents` throws on
+  a stale head page. Existing fixtures now carry a fresh `polledAt`.
+- Breaking (pre-v0.2): a head page from an indexer that does not serve `polledAt` is unavailable (sui-indexer has
+  served it since 0.0.5).
+- Found while closing sui-indexer F19.
+
 ---
 
 ## Section A — Invariant verification matrix
@@ -840,6 +887,7 @@ or authorisation are affected (the chain still aborts).
 | I15 | One `@mysten/sui` copy per embedding host | peer dependency `^2.33.2`; consumers' ranges | `npm ls --all` in CI here; `npm ls` in the dashboard (per its `CLAUDE.md`) | HOLDS (F9 fixed 0.0.6) |
 | I16 | The abort table mirrors every `E_*` constant of the published package | `aborts.ts::ACCESS_GATE_ABORTS` | `mirrors every E_* constant of the published Move source, name and code` (reads the pinned `@meddleware/access-gate-sui` source); `covers codes 1–16…` | HOLDS (F24 fixed 0.0.9) |
 | I17 | A gate policy `buildCreateGateTx` builds satisfies `new_gate_policy`'s rule | `ptb.ts::validateGatePolicy`, `buildCreateGateTx` | `validateGatePolicy` truth table (16 rows), rule text pinned to the Move source, `buildCreateGateTx throws for an invalid policy…` | HOLDS (0.0.9) |
+| I18 | A stale indexer head page is unavailable (fallback to the full node); history pages are not age-checked | `events.ts::readIndexerEvents` (`checkFresh`) | `a stale head page counts as unavailable (sui-indexer F19)` (boundaries, null/missing, future skew, older page, override) | HOLDS (F25 fixed 0.0.10) |
 
 ---
 
@@ -985,7 +1033,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
 
 | Layer | Files | Gating variable | In CI? |
 | --- | --- | --- | --- |
-| Unit (offline) | 8 files, 153 tests (`vitest.config.ts`) | — | yes |
+| Unit (offline) | 8 files, 163 tests (`vitest.config.ts`) | — | yes |
 | Integration (live testnet reads + ABI drift) | `tests/integration/{grpc-read,abi-drift}.integration.test.ts` | `GRPC_TESTNET=1` (plus optional `GRPC_TESTNET_URL`, `ACCESS_GATE_TESTNET_GATE_ID`, `ACCESS_GATE_TESTNET_OWNER`) | weekly (`live-read.yml`, no secrets) — not in the push/PR workflow; 47 passed, 3 skipped on 2026-10-09 |
 | End-to-end | — (consumers' e2e) | — | — |
 
@@ -1005,7 +1053,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
 
 ### pre-localnet
 
-- [x] strict type-check, lint and unit tests green (153) — 2026-10-10 (145 on 2026-10-09)
+- [x] strict type-check, lint and unit tests green (163) — 2026-10-20 (153 on 2026-10-10, 145 on 2026-10-09)
 - [x] no secrets in source; installs clean; `npm audit` 0 — F23
 - [x] every builder and parser tested; no JSON-RPC; full-type matching — F17, F20
 - [x] untrusted parsers validate every field, failing closed — F1, F6 (RESOLVED 0.0.5, 0.0.6)
@@ -1036,6 +1084,8 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
 - [x] no `any`/`as`/`!` at trust boundaries without justification — casts in `json.ts`/`ownership.ts`
   are followed by type guards; indexer rows are validated one by one by `isEventRow` before the
   `CoreEventEntry` cast is used (F8)
+- [x] a stale indexer head page is treated as unavailable (sui-indexer F19, the client half) — F25, 0.0.10: `polledAt`
+  missing, null or older than 60 s falls back to the full node; tests above (shipped in 0.0.10)
 - [ ] external review — **maintainer-only**, after mainnet launch ("Funding, grants and an external audit" in
   `OPERATOR_TASKS.md`)
 
@@ -1178,7 +1228,9 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
   The weekly live suite catches a change, and the parsers fail closed (a pass is rejected, never defaulted)
   (F1, F3).
 - **Indexer availability.** Event history before the indexer's coverage, or after full-node pruning,
-  is unavailable. This affects display only.
+  is unavailable. This affects display only. A stuck indexer is detected from `polledAt` (60 s, F25); a client
+  clock more than 60 s ahead makes every head page look stale and so disables the indexer for that client (the
+  full node answers).
 - **Shared-SDK fragility.** One host-level `@mysten/sui` copy is now guaranteed by the peer declaration (F9); a
   host that ignores the peer warning still gets two copies.
 - **Gateway lag.** The live Worker resolves client 0.0.6 (checked 2026-10-18) and misses the 0.0.7 hardening;
@@ -1242,6 +1294,15 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
   gateway-repo item). No Section D box waited only on the release (the two open ones are mainnet-blocked).
 - 2026-10-19 — dependency-bot status checked (read-only): `.github/dependabot.yml` carries the `ignore` rules and the repository has no open Dependabot pull requests (`gh pr list`, 2026-10-19). Versions, findings and gates were not re-examined in this pass.
   - Dependabot policy encoded in .github/dependabot.yml (majors declined); open PRs merged 2026-10-19
+- 2026-10-20 — sui-indexer F19 closed on the client side: version 0.0.10 (local commit, commit pending; not tagged or
+  published).
+  - **F25 RESOLVED:** `readIndexerEvents` treats a head page with a missing, null or older-than-60-s `polledAt` as
+    unavailable (clock-skew tolerance 5 min into the future); `IndexerSource.staleAfterMs`, exports
+    `STALE_AFTER_MS` and `CLOCK_SKEW_TOLERANCE_MS`; new Section A row I18; new Section D box ticked.
+  - Measured: vitest 163/163 (8 files; 10 new tests, existing indexer fixtures gained `polledAt`); tsc, eslint, build,
+    `check:deployments` clean; pack 25 files.
+  - Consumers: seal-client (needs `^0.0.10` to inherit the check) and every app that passes an `indexer` (treasury-ui,
+    seal-ui) get it by bumping to the release; none bumped here.
 
 ## Pre-save consistency checklist (2026-10-09 re-verification, updated 2026-10-10)
 
@@ -1252,7 +1313,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
 - [x] Template line: base + TS + SUI_CLIENT with the registry's 2026-10-08 dates; untriggered lenses named.
 - [x] Closing structure in order.
 - [x] Open questions stay listed; decisions are recorded as `(Decided …)` notes and in the log.
-- [x] Section D ↔ dispositions — the two unticked items are mainnet-blocked and maintainer-only.
+- [x] Section D ↔ dispositions (2026-10-20: the stale-head-page box is ticked by F25) — the two unticked items are mainnet-blocked and maintainer-only.
 - [x] Executive summary matches the dispositions.
 - [x] Counts and versions re-measured 2026-10-09 (tests, coverage, pack, npm, ids).
 - [x] Re-verification log entry added.
