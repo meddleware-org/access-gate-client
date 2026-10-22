@@ -826,7 +826,7 @@ or authorisation are affected (the chain still aborts).
 
 ### F25 — A stuck indexer that still answers `200` shows frozen history (the client ignored `polledAt`)
 
-**Severity:** Low   **Disposition:** RESOLVED (0.0.10, 2026-10-20, commit pending; closes sui-indexer audit F19)
+**Severity:** Low   **Disposition:** RESOLVED (0.0.10, 2026-10-20, commit 1aa86d2; closes sui-indexer audit F19)
 **Where:** `src/events.ts::readIndexerEvents` (the shared indexer reader; `listAccessGateEvents` and seal-client's
 `listSealedContent` call it).
 
@@ -840,7 +840,7 @@ or authorisation are affected (the chain still aborts).
 **Impact:** stale display data for as long as an ingest failure lasts. Display only: no funds or access are
 affected (I10).
 
-**Remediation / evidence (2026-10-20, 0.0.10, commit pending):**
+**Remediation / evidence (2026-10-20, 0.0.10, commit 1aa86d2):**
 
 - A page without `before` (a head page) must carry a `polledAt` that is a positive safe integer and no older than
   `STALE_AFTER_MS` = 60 000 ms (4 × the indexer's default 15 s poll), by the client's `Date.now()`. A
@@ -1294,7 +1294,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
   gateway-repo item). No Section D box waited only on the release (the two open ones are mainnet-blocked).
 - 2026-10-19 — dependency-bot status checked (read-only): `.github/dependabot.yml` carries the `ignore` rules and the repository has no open Dependabot pull requests (`gh pr list`, 2026-10-19). Versions, findings and gates were not re-examined in this pass.
   - Dependabot policy encoded in .github/dependabot.yml (majors declined); open PRs merged 2026-10-19
-- 2026-10-20 — sui-indexer F19 closed on the client side: version 0.0.10 (local commit, commit pending; not tagged or
+- 2026-10-20 — sui-indexer F19 closed on the client side: version 0.0.10 (local commit, commit 1aa86d2; not tagged or
   published).
   - **F25 RESOLVED:** `readIndexerEvents` treats a head page with a missing, null or older-than-60-s `polledAt` as
     unavailable (clock-skew tolerance 5 min into the future); `IndexerSource.staleAfterMs`, exports
