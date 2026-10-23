@@ -430,7 +430,7 @@ export interface IndexerEventsPage {
 /**
  * GET `<indexer.url>/<path>?<params>` within the indexer's timeout and return its event page. The
  * shared reader for every indexer listing (access_gate events here, sealed-content pointers in
- * seal-client). The rows are untrusted: callers decode and type-check each one like a full-node
+ * sealed-storage-client). The rows are untrusted: callers decode and type-check each one like a full-node
  * event.
  *
  * `path` must be relative to the indexer URL (no scheme, no leading `//`), redirects are refused and

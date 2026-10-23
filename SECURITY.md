@@ -13,7 +13,7 @@ This policy covers the `@meddleware/access-gate-client` package source (`src/**`
 It does not cover:
 
 - the `access-gate-sui` on-chain package (see that repo's `SECURITY.md`);
-- the `nft-gate` gateways, which verify access server-side;
+- the access-gate gateways, which verify access server-side;
 - the `sui-indexer` service;
 - the `@mysten/sui` SDK (report upstream to [Mysten Labs](https://github.com/MystenLabs));
 - the caller-supplied wallet, signer and RPC endpoint.

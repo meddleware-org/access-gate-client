@@ -27,10 +27,10 @@
   `@meddleware/access-gate-sui` 0.0.6. The superseded `0xa55789…` package is now immutable (UpgradeCap
   burned 2026-10-09).
 - Consumed at `^0.0.9` (resolves exactly to the latest; bumped 2026-10-18, verified in `repos/*/package.json`) by:
-  - access-gate-ui, dao-ui, treasury-ui, seal-ui, walrus-ui, token-deployer-ui;
-  - walrus-relay, seal-client, sui-indexer;
+  - access-gate-ui, dao-ui, treasury-ui, sealed-storage-ui, walrus-storage-ui, token-issuance-ui;
+  - walrus-relay, sealed-storage-client, sui-indexer;
   - the docs and dev sites;
-  - **nft-gate/gateway-workers**, the live relay paywall, which uses `ownsAccessNft` for authorisation
+  - **access-gate-gateway/gateway-workers**, the live relay paywall, which uses `ownsAccessNft` for authorisation
     in ownership mode. It resolves **exactly 0.0.6** (`^0.0.6`, lockfile 0.0.6): that version already
     carries the usable-only ownership check and strict event decoding, but not the 0.0.7 consume and
     abort hardening or the 2026-10-09 ids (still `^0.0.6` on 2026-10-18, although the Worker itself was
@@ -55,12 +55,12 @@ consumed at `^0.0.9` (2026-10-18)
   `exports["./deployments"].default` = `src/deployments.ts`) + declaration-only build (`types` →
   `dist/*.d.ts`, built by `prepublishOnly`)
 **Runtime targets:** browsers (via Vite; `browserslist` `> 0.5%, last 2 versions, not dead`), Node ≥ 22
-  (`AGENTS.md`; no `engines`), workerd (nft-gate Worker)
+  (`AGENTS.md`; no `engines`), workerd (access-gate Worker)
 **Peer dependencies:** `@mysten/sui` `^2.33.2` (F9, RESOLVED 0.0.6); no runtime dependencies
 
 **Sui SDK:** `@mysten/sui` **peer** `^2.33.2` + devDependency `^2.35.0` (installed 2.35.0). The
   workspace baseline text in ADR-0001 still reads `^2.33.1`; the fleet's peers have since moved to
-  `^2.33.2` (this package, seal-client, walrus-relay), so one copy is still deduped per host.
+  `^2.33.2` (this package, sealed-storage-client, walrus-relay), so one copy is still deduped per host.
 **Transport:** gRPC core API (`client.core.listOwnedObjects / getObject / listEvents`, through
   structural client types) + an optional HTTPS read-indexer for event listings (display only). No
   JSON-RPC.
@@ -130,7 +130,7 @@ closed by 0.0.5-0.0.8, and F24 by 0.0.9 (see the re-verification log):
 5. **F25 (Low, RESOLVED in 0.0.10 on 2026-10-20).** The indexer reader ignored the freshness field `polledAt`
    that sui-indexer serves on head pages, so a stuck indexer that still answered `200` showed frozen history.
    `readIndexerEvents` now treats a missing, null or older-than-60-s `polledAt` on a head page as unavailable
-   and the existing fallback to the full node runs (sui-indexer audit F19; seal-client inherits it).
+   and the existing fallback to the full node runs (sui-indexer audit F19; sealed-storage-client inherits it).
 
 Mainnet remains unpublished, so the pre-mainnet gates that need a mainnet record or an external review
 stay open in Section D.
@@ -152,7 +152,7 @@ that come from `@meddleware/access-gate-sui`.
 | `@meddleware/access-gate-sui` npm package | `Published.toml` / `deployments.json` → the IDs every builder targets | redirect every PTB to another package if tampered | exact devDependency pin `0.0.6`; npm provenance on that package; `check:deployments` in CI; HEX_ID validation |
 | npm registry / dependency authors | runtime (`@mysten/sui`) and dev toolchain | ship altered code | lockfile; `npm audit` in CI and publish; OIDC provenance on publish |
 | Embedding host (dashboard + several tools) | the `@mysten/sui` copy in the tree | duplicate copies → `Transaction` / type mismatch | `@mysten/sui` is a peer dependency (`^2.33.2`), so the host supplies the one copy (F9, fixed 0.0.6); `npm ls --all` in CI |
-| **Downstream authoriser (nft-gate Worker)** | treats `ownsAccessNft` as "may access" | admit or deny relay uploads | usable passes only (F2); an unparsable variant is rejected (F1); both fixed 0.0.5 |
+| **Downstream authoriser (access-gate Worker)** | treats `ownsAccessNft` as "may access" | admit or deny relay uploads | usable passes only (F2); an unparsable variant is rejected (F1); both fixed 0.0.5 |
 
 ### On-chain dependency matrix (SUI_CLIENT lens)
 
@@ -204,11 +204,11 @@ Critical / High / Medium / Low / Info / Positive (unchanged across the corpus).
 
 - `access-gate-sui/sources/access_gate.move`, for ABI, event and struct parity
 - walrus-relay `src/composables/useAccessGate.ts` (`usesRemaining` filter and NFT selection)
-- token-deployer-ui `src/components/IconPicker.vue` (`singleUse: usesRemaining !== null`)
+- token-issuance-ui `src/components/IconPicker.vue` (`singleUse: usesRemaining !== null`)
 - nft-gate `gateway-workers/src/chain.ts` (`ownsAccessNft` on the authorisation path)
 - the shared-dependency ranges of every consumer
 
-**Out of scope:** the Move package (its own audit); `@meddleware/nft-gate-client` (the wire protocol);
+**Out of scope:** the Move package (its own audit); `@meddleware/access-gate-gateway-client` (the wire protocol);
 the read-indexer service; the consuming apps.
 
 **Environment / commands (2026-10-09, Node 24.13.0, npm 11.6.2; the 2026-10-03 baseline ran Node 22.22.2):**
@@ -259,7 +259,7 @@ The working tree was left clean (`coverage/` removed; `dist/` and `node_modules/
 
 - walrus-relay `useAccessGate.ts:92` keeps `usesRemaining === null` passes as usable and sorts them
   last.
-- token-deployer-ui `IconPicker.vue:165` sets `singleUse: usesRemaining !== null`, so an unknown count
+- token-issuance-ui `IconPicker.vue:165` sets `singleUse: usesRemaining !== null`, so an unknown count
   skips the on-chain consume, and the single-use gateway then rejects the upload with no clear cause.
 - Once nft-gate F7 adds a uses check to `ownsAccessNft` (F2), an unknown count would **admit** an
   exhausted pass.
@@ -273,7 +273,7 @@ rejects every variant it cannot parse instead of reading it as unlimited`, `keep
 including the maximum`. The real rendering is pinned by `tests/integration/grpc-read.integration.test.ts`
 (`fetchAccessNftById` on a real testnet single-use pass, asserting `variant.kind` and a `bigint` count;
 passing on 2026-10-09). Consumers moved in step: walrus-relay `useAccessGate.ts` filters with
-`isUsablePass` and carries the `variant`; token-deployer-ui reads `accessGate.singleUse` and no longer
+`isUsablePass` and carries the `variant`; token-issuance-ui reads `accessGate.singleUse` and no longer
 sees a nullable count. Unlimited-vs-unknown can no longer be confused.
 
 **Baseline recommendation (2026-10-03):**
@@ -285,13 +285,13 @@ sees a nullable count. Unlimited-vs-unknown can no longer be confused.
 - Pin the real rendering with a live integration assertion on a known unlimited pass and a known
   single-use pass, both in testnet fixtures.
 - Correct the comment.
-- Update walrus-relay and token-deployer-ui in the same release (pre-v0.2: no compatibility shim
+- Update walrus-relay and token-issuance-ui in the same release (pre-v0.2: no compatibility shim
   needed).
 
 ### F2 — `ownsAccessNft` is used to authorise but admits exhausted single-use passes
 
 **Severity:** Medium   **Disposition:** RESOLVED (0.0.5, `8435927`; OQ2 decided: usable-only by default in `ownsAccessNft`)
-**Where:** `src/ownership.ts:133-146`; consumer `nft-gate/gateway-workers/src/chain.ts::ownsNftLive`.
+**Where:** `src/ownership.ts:133-146`; consumer `access-gate-gateway/gateway-workers/src/chain.ts::ownsNftLive`.
 
 **Issue:**
 
@@ -311,7 +311,7 @@ the live relay runs single-use mode.
 whose variant cannot be parsed never counts. Tests: `owned-object reads › ownsAccessNft counts usable
 passes only by default`, `ownsAccessNft never counts a pass whose variant is unknown`, `isUsablePass ›
 counts unlimited and non-empty single-use passes only`. `SECURITY.md` invariant 3 and `CLAUDE.md`
-("Authorisation role") now document the function as authorisation-grade. The nft-gate Worker's call site
+("Authorisation role") now document the function as authorisation-grade. The access-gate Worker's call site
 (`gateway-workers/src/chain.ts::ownsNftLive`) inherits the default; the Worker resolves client 0.0.6,
 which includes this change. The gateway audits track their own F7 dispositions.
 
@@ -482,7 +482,7 @@ locked_commission` keeps the legitimate shape.
   redirect to `http:` in Node or workerd, and the https check applies to the configured base only.
 - **(c) `path` can escape the check.** `new URL(path, base)` lets an absolute or protocol-relative
   `path` (`//evil.example/…`, `https://evil/…`) leave the checked host. The function is exported and
-  shared with seal-client, which passes a constant today.
+  shared with sealed-storage-client, which passes a constant today.
 
 **Impact:** Display data only; nothing authorises on it. The risks are a client-side memory spike, a
 plaintext downgrade, or a future caller reading from an unchecked host.
@@ -540,13 +540,13 @@ layout drift`.
 - A second copy in a host tree produces `#private`-mismatch type errors and can break `instanceof`
   checks. The dashboard's `CLAUDE.md` documents exactly this failure.
 - Today every consumer range admits the dashboard's pin `2.33.2`, so npm dedupes.
-- seal-client and wallet-adapter declare `@mysten/sui` as a peer, which is the pattern that guarantees
+- sealed-storage-client and wallet-adapter declare `@mysten/sui` as a peer, which is the pattern that guarantees
   one copy.
 
 **Impact:** A future range divergence silently installs two copies in a host.
 
 **Remediation / evidence (2026-10-09):** `@mysten/sui` is a `peerDependency` (`^2.33.2`) and a devDependency (`^2.35.0`), matching
-seal-client and wallet-adapter, so a host supplies the single copy that the builders' `Transaction`
+sealed-storage-client and wallet-adapter, so a host supplies the single copy that the builders' `Transaction`
 instances come from. CI runs `npm ls --all` (peer ranges satisfied); this repo has no `legacy-peer-deps`.
 The shared-dependency matrix row in B.1 is updated.
 
@@ -641,7 +641,7 @@ access_gate abort`, `survives a cyclic error chain`, `still finds an abort wrapp
 **Baseline recommendation (2026-10-03):**
 
 - Require `originalId` (a breaking change is acceptable before v0.2).
-- Bound the recursion depth (for example 8, as walrus-client does).
+- Bound the recursion depth (for example 8, as walrus-storage-client does).
 
 ### F14 — Documentation drift
 
@@ -827,7 +827,7 @@ or authorisation are affected (the chain still aborts).
 ### F25 — A stuck indexer that still answers `200` shows frozen history (the client ignored `polledAt`)
 
 **Severity:** Low   **Disposition:** RESOLVED (0.0.10, 2026-10-20, commit 1aa86d2; closes sui-indexer audit F19)
-**Where:** `src/events.ts::readIndexerEvents` (the shared indexer reader; `listAccessGateEvents` and seal-client's
+**Where:** `src/events.ts::readIndexerEvents` (the shared indexer reader; `listAccessGateEvents` and sealed-storage-client's
 `listSealedContent` call it).
 
 **Issue:**
@@ -925,9 +925,9 @@ affected (I10).
 | `typescript` | — | `~6.0.3` | — |
 | `vitest` | — | `~5.0.2` | — |
 
-Consumers declare `^0.0.9` (11 repos, 2026-10-18: access-gate-ui, dao-ui, treasury-ui, seal-ui, walrus-ui,
-token-deployer-ui, walrus-relay, seal-client, sui-indexer, docs, dev), which resolves to exactly the latest
-published version, as the policy requires (`^0.0.8` on 2026-10-09). **nft-gate/gateway-workers declares `^0.0.6`**
+Consumers declare `^0.0.9` (11 repos, 2026-10-18: access-gate-ui, dao-ui, treasury-ui, sealed-storage-ui, walrus-storage-ui,
+token-issuance-ui, walrus-relay, sealed-storage-client, sui-indexer, docs, dev), which resolves to exactly the latest
+published version, as the policy requires (`^0.0.8` on 2026-10-09). **access-gate-gateway/gateway-workers declares `^0.0.6`**
 (exactly 0.0.6): it is behind the latest and carries the F1/F2 fixes but not 0.0.7 to 0.0.9; aligning it is a
 gateway-repo item.
 
@@ -1045,7 +1045,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
 | ABI of the published package | arity and per-parameter table | live suite (weekly CI) | F4 (fixed) |
 | Event BCS layouts vs the chain | schema-driven encoder round trip | live suite (struct shapes, real events decoded strictly) | F3 (fixed) |
 | Indexer service behaviour | fake fetch | consumers (treasury-ui/dao-ui with `VITE_INDEXER_URL`) | F7, F8 (fixed) |
-| Signing/execution of built PTBs | none (by design) | consumers' e2e (walrus-client gated relay, token-deployer `e2e:walrus`, access-gate-ui) | — |
+| Signing/execution of built PTBs | none (by design) | consumers' e2e (walrus-storage-client gated relay, token-issuance `e2e:walrus`, access-gate-ui) | — |
 
 ---
 
@@ -1208,7 +1208,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
 - **OQ2** Should `ownsAccessNft` count only usable passes by default, or should a separate
   authorisation function be added? Shared with nft-gate OQ2 (ownership-mode semantics). See F2.
   (Decided 2026-10-08: usable-only by default in `ownsAccessNft`, `{ usable: false }` to count all — see F2.)
-- **OQ3** Make `@mysten/sui` a peer dependency, as seal-client and wallet-adapter do? See F9.
+- **OQ3** Make `@mysten/sui` a peer dependency, as sealed-storage-client and wallet-adapter do? See F9.
   (Decided 2026-10-08: peer dependency, 0.0.6 — see F9.)
 - **OQ4** Run the live integration suite on a schedule in CI (read-only, public testnet), or keep it
   manual with each run recorded here? See F4.
@@ -1246,7 +1246,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
     `check:deployments` clean; pack 24 files.
   - The live integration suite was not runnable from the review sandbox (egress denied).
   - Cross-checked builder signatures against `access-gate-sui@32597c9`, and consumer use in
-    walrus-relay, token-deployer-ui and nft-gate.
+    walrus-relay, token-issuance-ui and nft-gate.
   - Recorded F1–F23 (F17–F23 Positive) and OQ1–OQ4.
   - **No findings resolved:** by maintainer instruction this pass only records findings; remediation,
     including single-solution fixes under the resolve-inline rule, is to be applied separately and each
@@ -1287,10 +1287,10 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
   - Section D: no unticked code gate remained; the two open boxes stay mainnet-blocked and maintainer-only.
   - Consumers needing a bump to 0.0.9: access-gate-ui (F12 validation and the new messages); the rest take it
     when next released. (Done 2026-10-18, see the last entry.)
-- 2026-10-18 — released (0.0.9), consumers bumped (access-gate-ui, dao-ui, treasury-ui, seal-ui, walrus-ui,
-  token-deployer-ui, walrus-relay, seal-client, sui-indexer, docs, dev: all `^0.0.9`). `npm view` shows
+- 2026-10-18 — released (0.0.9), consumers bumped (access-gate-ui, dao-ui, treasury-ui, sealed-storage-ui, walrus-storage-ui,
+  token-issuance-ui, walrus-relay, sealed-storage-client, sui-indexer, docs, dev: all `^0.0.9`). `npm view` shows
   `@meddleware/access-gate-client` 0.0.9 as `latest`, published 2026-10-10T15:02Z, with SLSA v1 provenance
-  (`dist.attestations`); tag `v0.0.9` at `1fed492`. Not bumped: nft-gate/gateway-workers (`^0.0.6`, lockfile 0.0.6; a
+  (`dist.attestations`); tag `v0.0.9` at `1fed492`. Not bumped: access-gate-gateway/gateway-workers (`^0.0.6`, lockfile 0.0.6; a
   gateway-repo item). No Section D box waited only on the release (the two open ones are mainnet-blocked).
 - 2026-10-19 — dependency-bot status checked (read-only): `.github/dependabot.yml` carries the `ignore` rules and the repository has no open Dependabot pull requests (`gh pr list`, 2026-10-19). Versions, findings and gates were not re-examined in this pass.
   - Dependabot policy encoded in .github/dependabot.yml (majors declined); open PRs merged 2026-10-19
@@ -1301,8 +1301,8 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
     `STALE_AFTER_MS` and `CLOCK_SKEW_TOLERANCE_MS`; new Section A row I18; new Section D box ticked.
   - Measured: vitest 163/163 (8 files; 10 new tests, existing indexer fixtures gained `polledAt`); tsc, eslint, build,
     `check:deployments` clean; pack 25 files.
-  - Consumers: seal-client (needs `^0.0.10` to inherit the check) and every app that passes an `indexer` (treasury-ui,
-    seal-ui) get it by bumping to the release; none bumped here.
+  - Consumers: sealed-storage-client (needs `^0.0.10` to inherit the check) and every app that passes an `indexer` (treasury-ui,
+    sealed-storage-ui) get it by bumping to the release; none bumped here.
 
 ## Pre-save consistency checklist (2026-10-09 re-verification, updated 2026-10-10)
 

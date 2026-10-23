@@ -8,7 +8,7 @@ package: typed reads of gates, access NFTs and the platform config; typed events
 builders; abort messages; and the deployed package and object ids.
 
 It talks to a Sui full node over gRPC (`SuiGrpcClient` from `@mysten/sui`). The gateway challenge
-and proof wire protocol is in [`@meddleware/nft-gate-client`](https://github.com/meddleware-org/nft-gate-client).
+and proof wire protocol is in [`@meddleware/access-gate-gateway-client`](https://github.com/meddleware-org/access-gate-gateway-client).
 
 ```bash
 npm install @meddleware/access-gate-client @mysten/sui

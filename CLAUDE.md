@@ -1,8 +1,8 @@
 # CLAUDE.md — @meddleware/access-gate-client
 
 The one client for the `access_gate` Move package (`meddleware-org/access-gate-sui`). Apps, the
-walrus-relay composables and the nft-gate Worker read and build `access_gate` through it. The
-gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
+walrus-storage-kit composables and the access-gate Worker read and build `access_gate` through it. The
+gateway challenge/proof wire protocol stays in `@meddleware/access-gate-gateway-client`.
 
 ## Invariants
 
@@ -28,14 +28,14 @@ gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
 - **Events decode from BCS.** The layouts in `src/events.ts` mirror the Move event structs field for
   field. Change them in the same release as any event change in `access-gate-sui`.
 - **The indexer is display-only.**
-  - `readIndexerEvents` is the one indexer reader (seal-client uses it too): https only (loopback
+  - `readIndexerEvents` is the one indexer reader (sealed-storage-client uses it too): https only (loopback
     http allowed), a timeout, a 1 MiB body cap before parsing, and a checked page shape.
   - A **head page** (no `before`) must be fresh: `polledAt` (epoch ms, served by sui-indexer on head pages only)
     present, a safe integer, no older than `STALE_AFTER_MS` (60 s = 4 × the indexer's 15 s poll; override with
     `IndexerSource.staleAfterMs`) by `Date.now()`, and at most `CLOCK_SKEW_TOLERANCE_MS` (5 min) in the future.
     Otherwise `readIndexerEvents` throws and the callers fall back to the full node exactly as for a network
     failure (sui-indexer audit F19). Pages with `before` are immutable history: never checked. The check
-    lives here only; seal-client inherits it through this function.
+    lives here only; sealed-storage-client inherits it through this function.
   - `listAccessGateEvents` decodes and type-checks indexer rows exactly like full-node events.
   - It falls back to the full node for a first page.
   - Nothing here uses indexer data to authorise.
@@ -44,8 +44,8 @@ gateway challenge/proof wire protocol stays in `@meddleware/nft-gate-client`.
     `@meddleware/access-gate-sui`'s `Published.toml` and `deployments.json`.
   - Never edit it by hand. CI runs `check:deployments`.
   - No other file holds a package or object id.
-- **Authorisation role.** `ownsAccessNft` (with `isUsablePass`) is used to AUTHORISE (the nft-gate Worker,
-  seal-ui). They count only usable passes and fail closed on an unknown variant; indexer data is never
+- **Authorisation role.** `ownsAccessNft` (with `isUsablePass`) is used to AUTHORISE (the access-gate Worker,
+  sealed-storage-ui). They count only usable passes and fail closed on an unknown variant; indexer data is never
   an input.
 - **Abort table.**
   - `ACCESS_GATE_ABORTS` mirrors the `E_*` constants in `access_gate.move` (codes 1–16). `tests/aborts.test.ts` compares the table with the `E_*` constants of the pinned
