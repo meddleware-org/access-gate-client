@@ -1317,3 +1317,4 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
 - [x] Executive summary matches the dispositions.
 - [x] Counts and versions re-measured 2026-10-09 (tests, coverage, pack, npm, ids).
 - [x] Re-verification log entry added.
+- 2026-10-24 — Mirrors access-gate-sui OQ12: `toPaymentRecipient` refuses the zero address in `buildCreateGateTx` and `buildSetPaymentRecipientTx` (D45 pattern); the `E_ZERO_ADDRESS` text names the payment recipient; 164 tests pass.

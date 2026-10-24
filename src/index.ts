@@ -96,6 +96,7 @@ export {
   minimumPaidPriceMist,
   gateCommissionMist,
   toAddress,
+  toPaymentRecipient,
   toU64,
   buildPurchaseTx,
   buildConsumeTx,

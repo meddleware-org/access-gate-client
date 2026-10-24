@@ -130,6 +130,13 @@ describe('ptb builders', () => {
     expect(json).toContain('"NestedResult":[0,0]')
   })
 
+  it('refuses a zero payment recipient before building (E_ZERO_ADDRESS, OQ12)', () => {
+    const zero = '0x' + '0'.repeat(64)
+    expect(() => buildCreateGateTx(PKG, PLATFORM, { ...gateOpts, paymentRecipient: zero })).toThrow(/zero address/)
+    expect(() => buildCreateGateTx(PKG, PLATFORM, { ...gateOpts, priceMist: 0n, freeGateFeeMist: 1n, paymentRecipient: zero })).toThrow(/zero address/)
+    expect(() => buildSetPaymentRecipientTx(adminCtx, zero)).toThrow(/zero address/)
+  })
+
   it('buildCreateGateTx: price 0 → splits the free-gate fee and calls create_free_gate', () => {
     const json = commandsJson(buildCreateGateTx(PKG, PLATFORM, { ...gateOpts, priceMist: 0n, freeGateFeeMist: 100_000_000n }))
     expect(json).toContain('"function":"create_free_gate"')

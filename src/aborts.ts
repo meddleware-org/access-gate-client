@@ -17,7 +17,7 @@ export const ACCESS_GATE_ABORTS: Readonly<Record<number, AccessGateAbort>> = Obj
   6: { name: 'E_GATE_FROZEN', message: 'This gate is immutable; it can no longer be changed.' },
   7: { name: 'E_COMMISSION_TOO_HIGH', message: 'The commission exceeds the 10% cap.' },
   8: { name: 'E_INVALID_NONCE', message: 'The access nonce is too short.' },
-  9: { name: 'E_ZERO_ADDRESS', message: 'The treasury cannot be the zero address.' },
+  9: { name: 'E_ZERO_ADDRESS', message: 'The treasury or the gate\'s payment recipient cannot be the zero address.' },
   10: { name: 'E_FREEZE_WHILE_PAUSED', message: "This gate's policy forbids freezing it while paused." },
   11: { name: 'E_PRICE_TOO_LOW', message: 'The price is below the platform minimum for a paid gate.' },
   12: { name: 'E_FREE_FEE_UNPAID', message: 'Pay the free-gate fee before setting the price to 0.' },

@@ -42,6 +42,21 @@ export function toAddress(value: string): string {
   return v.toLowerCase()
 }
 
+const ZERO_ADDRESS = '0x' + '0'.repeat(64)
+
+/**
+ * A gate's payment recipient: a full address ({@link toAddress}) that is not `0x0…0`. Mirrors the contract's
+ * `E_ZERO_ADDRESS` (9) on `create_*` and `set_payment_recipient` (audit OQ12), so no transaction that would
+ * abort (or, before that rule, burn every operator share) is built.
+ *
+ * @throws {Error} if `value` is not a full Sui address or is the zero address.
+ */
+export function toPaymentRecipient(value: string): string {
+  const a = toAddress(value)
+  if (a === ZERO_ADDRESS) throw new Error('the payment recipient cannot be the zero address (E_ZERO_ADDRESS)')
+  return a
+}
+
 /** The single result of a command that returns exactly one value. */
 function only(result: TransactionResult): TransactionResult[number] {
   const [first] = result
@@ -194,7 +209,7 @@ export function buildCreateGateTx(
     ],
   }))
   const tail = [
-    tx.pure.address(toAddress(opts.paymentRecipient)),
+    tx.pure.address(toPaymentRecipient(opts.paymentRecipient)),
     tx.pure.u64(toU64(opts.defaultUses)),
     tx.pure.bool(opts.soulbound),
     tx.pure.bool(opts.autoBurnAtZero),
@@ -268,7 +283,7 @@ export function buildMakeGateFreeTx(ctx: GateAdminContext, feeMist: bigint | num
 
 /** Redirect future purchase payments to a new recipient address. */
 export function buildSetPaymentRecipientTx(ctx: GateAdminContext, recipient: string): Transaction {
-  return buildGateAdminCall(ctx, 'set_payment_recipient', (tx) => [tx.pure.address(toAddress(recipient))])
+  return buildGateAdminCall(ctx, 'set_payment_recipient', (tx) => [tx.pure.address(toPaymentRecipient(recipient))])
 }
 
 /** Pause or unpause `purchase` (paused ⇒ `purchase` aborts with `E_PAUSED`). */

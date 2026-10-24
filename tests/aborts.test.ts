@@ -63,7 +63,7 @@ describe('abortMessage', () => {
   })
 
   it('ignores aborts from other modules or packages, and errors without an abort', () => {
-    expect(abortMessage({ MoveAbort: { abortCode: '1', location: { package: PKG, module: 'seal_policies' } } }, PKG)).toBeNull()
+    expect(abortMessage({ MoveAbort: { abortCode: '1', location: { package: PKG, module: 'sealed_storage' } } }, PKG)).toBeNull()
     expect(abortMessage({ MoveAbort: { abortCode: '1', location: { package: '0x2', module: 'access_gate' } } }, PKG)).toBeNull()
     expect(abortMessage({ MoveAbort: { abortCode: '1' } }, PKG)).toBeNull()
     expect(abortMessage(new Error('network down'), PKG)).toBeNull()
