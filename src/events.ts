@@ -251,7 +251,7 @@ export interface EventCursor {
 
 /** A read-indexer to try before the full node. Display data only — never authorisation. */
 export interface IndexerSource {
-  /** Base URL, e.g. `https://sui-indexer.meddleware.co.uk`. */
+  /** Base URL, e.g. `https://sui-indexer.meddleware.dev`. */
   url: string
   network: string
   /** Give up and fall back to the full node after this long (default 3000 ms). */

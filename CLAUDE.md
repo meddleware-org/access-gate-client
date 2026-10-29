@@ -75,7 +75,7 @@ gateway challenge/proof wire protocol stays in `@meddleware/access-gate-gateway-
 
 ## Deferred documentation — NOT for the `docs.` website
 
-> Captured for the future **`dev.meddleware.co.uk`** subdomain.
+> Captured for the future **`meddleware.dev`** subdomain.
 
 - **SDK reference** (TypeDoc from the shipped `.d.ts`): reads, events, builders, abort table,
   `deployments`.

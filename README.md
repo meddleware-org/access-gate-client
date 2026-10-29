@@ -72,7 +72,7 @@ const page = await listAccessGateEvents(client, {
   kinds: ['AccessMinted', 'AccessConsumed'], // default: all seven
   gateId, // optional
   limit: 20,
-  indexer: { url: 'https://sui-indexer.meddleware.co.uk', network: 'testnet' }, // optional
+  indexer: { url: 'https://sui-indexer.meddleware.dev', network: 'testnet' }, // optional
 })
 page.events // newest first, typed per kind (e.g. AccessConsumed.consumer, .nonce)
 page.cursor // pass back as `cursor` for older events
