@@ -36,7 +36,7 @@
     abort hardening or the 2026-10-09 ids (still `^0.0.6` on 2026-10-18, although the Worker itself was
     redeployed from `main` on 2026-10-10). The Worker takes the gate and NFT type from its own config,
     so it does not depend on this package's ids. Bumping it to 0.0.9 is a gateway-repo item.
-**Review date:** 2026-10-03, re-verified 2026-10-09 · fix wave 2026-10-10 · release status 2026-10-18
+**Review date:** 2026-10-03, re-verified 2026-10-09 · fix wave 2026-10-10 · release status 2026-10-18; 0.0.13 re-verified 2026-10-30 (Point documentation and examples at the machine zone (ADR-0005); depend on access-gate-sui 0)
 **Reviewer:** Internal review
 **Severity ceiling:** High.
   - The builders construct the PTBs users sign with SUI, so a wrong target or ID would send funds
