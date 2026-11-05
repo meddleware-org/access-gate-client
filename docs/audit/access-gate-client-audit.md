@@ -6,7 +6,7 @@
   transaction builders, commission arithmetic, the abort table and the generated deployment ids;
   ADR-0001's single home for `access_gate` chain access)
 **Project type:** TS SDK (npm package; ships TypeScript source + declaration-only build)
-**Template:** AUDIT_TEMPLATE.md (2026-10-08) + AUDIT_TEMPLATE_TS.md (2026-10-08) +
+**Template:** AUDIT_TEMPLATE.md (2026-11-01) + AUDIT_TEMPLATE_TS.md (2026-11-01) +
   AUDIT_TEMPLATE_SUI_CLIENT.md (2026-10-08)
   - VUE, WALRUS, SEAL, AUTH, IMG, OPS, PROXY, WORKERS and the language lenses for Go/Rust: not triggered
     (no UI, storage, encryption, credentials, image, signing scripts, forwarding or Worker code). The
@@ -36,7 +36,7 @@
     abort hardening or the 2026-10-09 ids (still `^0.0.6` on 2026-10-18, although the Worker itself was
     redeployed from `main` on 2026-10-10). The Worker takes the gate and NFT type from its own config,
     so it does not depend on this package's ids. Bumping it to 0.0.9 is a gateway-repo item.
-**Review date:** 2026-10-03, re-verified 2026-10-09 · fix wave 2026-10-10 · release status 2026-10-18; 0.0.13 re-verified 2026-10-30 (Point documentation and examples at the machine zone (ADR-0005); depend on access-gate-sui 0)
+**Review date:** 2026-10-03, re-verified 2026-10-09 · fix wave 2026-10-10 · release status 2026-10-18; 0.0.13 released 2026-10-30 (Point documentation and examples at the machine zone (ADR-0005); depend on access-gate-sui 0); frontend-wave delta review 2026-11-01 (real review of the 2026-10-19 → 2026-11-01 changes; see the delta section)
 **Reviewer:** Internal review
 **Severity ceiling:** High.
   - The builders construct the PTBs users sign with SUI, so a wrong target or ID would send funds
@@ -136,6 +136,8 @@ Mainnet remains unpublished, so the pre-mainnet gates that need a mainnet record
 stay open in Section D.
 
 ---
+
+**2026-11-01 update.** The 0.0.13 release (2026-10-30) changed versions, generated comments and the lockfile only; this review re-ran every gate and found nothing to fix (F26, Positive).
 
 ## Threat model / trust boundaries
 
@@ -866,6 +868,18 @@ affected (I10).
 
 ---
 
+### Frontend wave delta review (2026-11-01) — 0.0.13 reviewed
+
+Scope: the changes since the last substantive entry of this audit: 0.0.13 (2026-10-30: depend on `@meddleware/access-gate-sui` 0.0.11; the generated `deployments.ts` comment) after 0.0.12 (2026-10-24: the zero payment recipient refused, logged on 2026-10-24). The release tool's "re-verified" mark for the 2026-10-30 release recorded no review; this section is the review. Read the diff of the release commits (version strings and generated comments only — no source or Move change in the wave) and re-ran this repository's gates. Ran: `npm ci`; `npm audit --audit-level=high` (exit 0; nine moderate findings, all the `minimatch` chain of the dev-only lint toolchain, GHSA-g3hv-75wg-m249 — accepted as in walrus-storage-client F28); `tsc --noEmit`; eslint; `vitest` (8 files, 164 tests); `npm pack --dry-run` (25 files, 136 KiB: `src/`, `dist/*.d.ts`, `CHANGELOG.md`, `SECURITY.md`; no tests or audit); `npm run check:deployments` — `src/deployments.ts` matches `@meddleware/access-gate-sui@0.0.11` (the generated ids are the published ones).
+
+### F26 — Positive: the refreshed release passes its own gates, with nothing changed in the shipped logic
+**Severity:** Positive
+**Evidence:** the generated `deployments.ts` equals the published `access-gate-sui` 0.0.11 record, and the zero-recipient refusal from 2026-10-24 is still in force with its tests (164 pass). The 10-30 release changed no behaviour.
+
+### Delta notes
+- **A11Y lens:** SDK: no pages, no colours (A11Y lens not triggered).
+- **Supply chain:** published through the tag-gated trusted-publisher workflow with provenance (unchanged); Dependabot configuration present.
+
 ## Section A — Invariant verification matrix
 
 | # | Invariant | Enforced / asserted at | Proven by | Status |
@@ -1303,6 +1317,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
     `check:deployments` clean; pack 25 files.
   - Consumers: sealed-storage-client (needs `^0.0.10` to inherit the check) and every app that passes an `indexer` (treasury-ui,
     sealed-storage-ui) get it by bumping to the release; none bumped here.
+- 2026-11-01 — frontend-wave delta review of 0.0.13: read the 10-30 release diff (no source change) and re-ran the gates (see the delta section); recorded F26 as Positive. The release tool's bare "re-verified" mark was reworded to "released". `**Template:**` dates reconciled to the 2026-11-01 registry with no disposition change.
 
 ## Pre-save consistency checklist (2026-10-09 re-verification, updated 2026-10-10)
 
