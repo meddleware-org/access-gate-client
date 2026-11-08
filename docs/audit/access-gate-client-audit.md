@@ -1100,7 +1100,7 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
   `CoreEventEntry` cast is used (F8)
 - [x] a stale indexer head page is treated as unavailable (sui-indexer F19, the client half) — F25, 0.0.10: `polledAt`
   missing, null or older than 60 s falls back to the full node; tests above (shipped in 0.0.10)
-- [ ] external review — **maintainer-only**, after mainnet launch ("Funding, grants and an external audit" in
+- [ ] external review (ADR-0009 gate G4: not a launch gate; covered by redeploy and the audit pass) — **maintainer-only**, after mainnet launch ("Funding, grants and an external audit" in
   `OPERATOR_TASKS.md`)
 
 ---
