@@ -47,14 +47,14 @@
     "lint": "npm run lint:js"
   },
   "devDependencies": {
-    "@meddleware/access-gate-sui": "0.0.11",
+    "@meddleware/access-gate-sui": "0.0.12",
     "@mysten/sui": "^2.35.0",
     "@types/node": "~26.6.5",
     "eslint": "^10.11.0",
     "jiti": "^2.7.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.1",
-    "vitest": "~5.0.2"
+    "vitest": "~5.1.0"
   },
   "publishConfig": {
     "access": "public"
