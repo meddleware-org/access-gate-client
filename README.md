@@ -69,7 +69,7 @@ import { listAccessGateEvents } from '@meddleware/access-gate-client'
 
 const page = await listAccessGateEvents(client, {
   originalId,
-  kinds: ['AccessMinted', 'AccessConsumed'], // default: all seven
+  kinds: ['AccessMinted', 'AccessConsumed'], // default: all eight
   gateId, // optional
   limit: 20,
   indexer: { url: 'https://sui-indexer.meddleware.dev', network: 'testnet' }, // optional

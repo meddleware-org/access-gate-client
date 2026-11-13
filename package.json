@@ -4,7 +4,7 @@
   "homepage": "https://docs.meddleware.co.uk/blockchain/sui/access-gate/",
   "type": "module",
   "description": "Client for the access_gate Move package: typed reads, events, transaction builders, abort messages and deployment ids.",
-  "author": "MeddleWare <dev@meddleware.co.uk>",
+  "author": "Meddleware <dev@meddleware.co.uk>",
   "license": "0BSD",
   "repository": {
     "type": "git",
