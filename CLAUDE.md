@@ -54,9 +54,34 @@ gateway challenge/proof wire protocol stays in `@meddleware/access-gate-gateway-
     before building. Change it together with the Move rule.
   - Every builder that touches a gate or consumes passes `platformConfigId` (the on-chain version gate).
   - `abortMessage` only claims aborts located in the `access_gate` module.
-- **`@mysten/sui` is the only runtime dependency.**
+- **`@mysten/sui` is the only dependency**, as a peer (`^2.33.2`); there are no runtime dependencies.
 - **No secrets.** Signers and RPC endpoints are caller-supplied.
 - **0BSD licence.**
+
+## Layout and commands
+
+```text
+src/
+├── index.ts        public re-exports
+├── deployments.ts  GENERATED ids per network (subpath `./deployments`)
+├── typeNames.ts    full type strings, exact normalised matching
+├── types.ts        object, event and structural client types
+├── json.ts         strict field readers
+├── ownership.ts    paged owned-object reads; access NFTs
+├── gates.ts        AdminCaps, Gates, PlatformConfig, PlatformAdminCap
+├── events.ts       BCS event decoding, listAccessGateEvents (full node / indexer)
+├── aborts.ts       ACCESS_GATE_ABORTS (codes 1–16), abortMessage
+└── ptb.ts          transaction builders, gate-policy validator, commission arithmetic
+scripts/gen-deployments.mjs   writes/checks src/deployments.ts from @meddleware/access-gate-sui
+tests/                        vitest unit tests; tests/integration is live testnet (GRPC_TESTNET=1)
+```
+
+`npm run type-check`, `npm run lint`, `npm test`, `GRPC_TESTNET=1 npm run test:integration`,
+`npm run gen:deployments` / `npm run check:deployments`, `npm run build` (the `.d.ts`).
+
+Release: bump `version`, push, tag `v<version>`; `npm-publish.yml` publishes via npm trusted publishing.
+Changes to `access_gate` structs, events or abort codes in `access-gate-sui` need the matching change here in
+the same release.
 
 ## Tests
 
