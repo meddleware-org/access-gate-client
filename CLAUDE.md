@@ -110,3 +110,7 @@ the same release.
   - `indexedFromCheckpoint`;
   - `polledAt` (head pages only; epoch ms of the last successful poll, `null` before any poll) — the client
     treats a missing, null or old value as unavailable (see above).
+
+## Interoperability
+
+- [docs/INTEROP.md](docs/INTEROP.md): the standards this project speaks, what is planned, where to extend it, and what proves each claim.
