@@ -13,6 +13,7 @@ import { fetchGate, fetchOwnedGates, fetchPlatformConfig, ownsPlatformAdminCap }
 import { listAccessGateEvents } from '../../src/events.js'
 import { fetchAccessNftById } from '../../src/ownership.js'
 import type { EventsClient, OwnedObjectsClient, SuiObjectClient } from '../../src/types.js'
+import { skipIfPruned } from './pruned.js'
 
 const RUN = !!process.env.GRPC_TESTNET
 const BASE_URL = process.env.GRPC_TESTNET_URL || 'https://fullnode.testnet.sui.io:443'
@@ -30,7 +31,8 @@ describe.skipIf(!RUN)('gRPC read path (real testnet full node)', () => {
   })
 
   it('lists and decodes access_gate events across the module filter, newest first', async (ctx) => {
-    const page = await listAccessGateEvents(any, { originalId, limit: 20 })
+    // A pruned range makes the node reject, not return nothing: skip then (see ./pruned.ts).
+    const page = await skipIfPruned(ctx, () => listAccessGateEvents(any, { originalId, limit: 20 }))
     expect(page.source).toBe('rpc')
     // Public full nodes prune events after a few days (this is why sui-indexer exists), so a quiet
     // package can legitimately have none left. Decoding and ordering are checked whenever there are some.
@@ -40,8 +42,9 @@ describe.skipIf(!RUN)('gRPC read path (real testnet full node)', () => {
     for (const e of page.events) expect(e.txDigest).toBeTruthy()
   })
 
-  it('decodes consume events with a consumer address', async () => {
-    const page = await listAccessGateEvents(any, { originalId, kinds: ['AccessConsumed'], limit: 5 })
+  it('decodes consume events with a consumer address', async (ctx) => {
+    // The same pruning answer is excused here.
+    const page = await skipIfPruned(ctx, () => listAccessGateEvents(any, { originalId, kinds: ['AccessConsumed'], limit: 5 }))
     for (const e of page.events) {
       if (e.kind !== 'AccessConsumed') throw new Error(`unexpected ${e.kind}`)
       expect(e.consumer).toMatch(/^0x[0-9a-f]{64}$/)

@@ -2,7 +2,13 @@
 // deployment: field names, order and Move types (`$PKG` = the package's own id). Two checks use it:
 // the offline schema test encodes values from it and requires the parsers to read them back, and the
 // testnet drift check requires the live package to still match it field for field.
+//
+// Why a table in the tests: the client's parsers read fields by name and the event layouts by position. If the Move package renames, reorders or
+// retypes a field, the parser must fail loudly; this table is the one place the expected shape is written down so both checks compare against it.
+
+/** Struct name → its fields in declaration order, each as `[name, Move type]`. `$PKG` stands for the package's original id. */
 export const STRUCT_SCHEMAS: Record<string, [name: string, type: string][]> = {
+  // Events first (they are decoded from BCS, where the order is the encoding), then the objects and helper structs (read by field name).
   GateCreatedEvent: [
     ['gate_id', '0x2::object::ID'],
     ['admin_cap_id', '0x2::object::ID'],
@@ -58,6 +64,7 @@ export const STRUCT_SCHEMAS: Record<string, [name: string, type: string][]> = {
     ['from_version', 'u64'],
     ['to_version', 'u64'],
   ],
+  // The shared `Gate` object. `UID` is the object's own id wrapper; the parser reads the object id from the object itself.
   Gate: [
     ['id', '0x2::object::UID'],
     ['admin_cap_id', '0x2::object::ID'],
@@ -118,5 +125,6 @@ export const STRUCT_SCHEMAS: Record<string, [name: string, type: string][]> = {
   ],
 }
 
+// The events are the subset whose names end in `Event`; the others are objects and helper structs.
 /** The access_gate event structs, in kind order. */
 export const EVENT_STRUCTS = Object.keys(STRUCT_SCHEMAS).filter((n) => n.endsWith('Event'))

@@ -93,6 +93,9 @@ page.cursor // pass back as `cursor` for older events
 - Indexer rows are decoded and type-checked like full-node events. The indexer URL must be `https:`
   (`http:` only for a loopback host); `readIndexerEvents` is the shared reader.
 - Indexer data is for display. Never use it to authorise anything.
+- **A public full node keeps only recent history.** When every event of the package is older than the node's retention, the node does not return an empty page:
+  the call rejects with `requested data below earliest available; lowest available checkpoint is N`. `listAccessGateEvents` lets that error through (an empty
+  list would hide that history exists but is unavailable); read history from the indexer, or from your own node.
 
 ## Transactions
 
@@ -133,12 +136,21 @@ try { /* sign and execute */ } catch (e) {
 
 ## Development
 
+The package ships its TypeScript source plus a declaration-only build. The checks, all run in CI on every push (`.github/workflows/node-ci.yml`):
+
 ```bash
-npm ci
-npm run type-check && npm run lint && npm test
+npm ci                           # install exactly the lockfile
+npm run type-check               # tsc over src/ and tests/
+npm run lint                     # eslint (typescript-eslint recommended)
+npm test                         # 164 offline unit tests
 npm run check:deployments        # src/deployments.ts matches @meddleware/access-gate-sui
-GRPC_TESTNET=1 npm run test:integration   # live reads + ABI drift against public testnet
+npm run build                    # the .d.ts files in dist/
+npm audit --audit-level=high     # the dependency check
+GRPC_TESTNET=1 npm run test:integration   # live reads + ABI drift against public testnet (read-only, no key; CI runs it weekly)
 ```
+
+How to propose a change: [CONTRIBUTING.md](CONTRIBUTING.md). The live suite skips the event tests when a public node has pruned the package's events (see
+Events above).
 
 After bumping `@meddleware/access-gate-sui`, run `npm run gen:deployments` and commit the result.
 CI fails if the two differ.

@@ -1,3 +1,16 @@
+/**
+ * @file Transaction builders for `access_gate`, the argument validators they share, and the commission arithmetic that mirrors the contract.
+ *
+ * Role: the write side. Each `build*Tx` returns an unsigned programmable transaction block; the caller signs and executes it with their wallet. Every
+ * check the contract would make *after* the user has signed and paid gas (a short nonce, a bad policy, a zero-address recipient, a lossy number) is made
+ * here *before* the prompt, so a transaction that must abort is never built.
+ *
+ * ID rule: calls target the latest **published-at** package id (`packageId`); the `AdminCap`-gated builders take a `GateAdminContext`.
+ * Main exports: `buildPurchaseTx`, `buildConsumeTx`, `buildCreateGateTx`, the `buildSet*Tx` setters, `buildAirdropTx`, `buildMakeGateFreeTx`,
+ * `buildMakeGateImmutableTx`, `validateGatePolicy`, `commissionForPrice`, `minimumPaidPriceMist`. Tested in `tests/ptb.test.ts` (including the call
+ * targets and argument order, pinned to the Move ABI by `tests/abi-table.ts`).
+ */
+// `Transaction` builds the block; `TransactionResult` types the value a command returns.
 import { Transaction } from '@mysten/sui/transactions'
 import { parseStructTag } from '@mysten/sui/utils'
 import type { TransactionResult } from '@mysten/sui/transactions'
@@ -12,6 +25,7 @@ export const DEFAULT_GATE_POLICY: Readonly<GatePolicy> = Object.freeze({
   pauseBlocksAccess: false,
 })
 
+/** The largest u64 (2^64 - 1), the contract's limit for every amount and count. */
 const MAX_U64 = (1n << 64n) - 1n
 
 /**
@@ -21,10 +35,12 @@ const MAX_U64 = (1n << 64n) - 1n
  * @throws {RangeError} if `v` is not an integer in `0..2^64-1`, or is an unsafe `number`.
  */
 export function toU64(v: bigint | number): bigint {
+  // A float or an integer above 2^53 has already lost precision before it reached us; refuse rather than encode a different amount.
   if (typeof v === 'number' && !Number.isSafeInteger(v)) {
     throw new RangeError(`not a safe integer amount: ${v} (pass a bigint)`)
   }
   const n = BigInt(v)
+  // The chain's u64 is unsigned and 64 bits wide.
   if (n < 0n || n > MAX_U64) throw new RangeError(`out of u64 range: ${n}`)
   return n
 }
@@ -37,11 +53,14 @@ export function toU64(v: bigint | number): bigint {
  * @throws {Error} if `value` is not a full Sui address.
  */
 export function toAddress(value: string): string {
+  // A pasted address often carries a trailing space or newline.
   const v = value.trim()
+  // Exactly `0x` and 64 hex digits (either case): a short form would be zero-padded into a different address.
   if (!/^0x[0-9a-fA-F]{64}$/.test(v)) throw new Error(`not a full Sui address (0x followed by 64 hex digits): ${value}`)
   return v.toLowerCase()
 }
 
+/** The all-zero address, which no one controls: sending an operator's share there would burn it. */
 const ZERO_ADDRESS = '0x' + '0'.repeat(64)
 
 /**
@@ -52,13 +71,16 @@ const ZERO_ADDRESS = '0x' + '0'.repeat(64)
  * @throws {Error} if `value` is not a full Sui address or is the zero address.
  */
 export function toPaymentRecipient(value: string): string {
+  // The same full-address rule as any recipient...
   const a = toAddress(value)
+  // ...plus the contract's own refusal of the zero address.
   if (a === ZERO_ADDRESS) throw new Error('the payment recipient cannot be the zero address (E_ZERO_ADDRESS)')
   return a
 }
 
 /** The single result of a command that returns exactly one value. */
 function only(result: TransactionResult): TransactionResult[number] {
+  // `TransactionResult` is an array-like of the command's return values; a command that returns one value has a first element.
   const [first] = result
   if (!first) throw new Error('expected a command result')
   return first
@@ -66,6 +88,7 @@ function only(result: TransactionResult): TransactionResult[number] {
 
 /** A coin of exactly `amount` MIST split from the gas coin. */
 function splitFromGas(tx: Transaction, amount: bigint | number): TransactionResult[number] {
+  // Splitting from `tx.gas` pays from the same coin that pays for gas, so the wallet needs no separate coin object. `toU64` validates the amount.
   return only(tx.splitCoins(tx.gas, [tx.pure.u64(toU64(amount))]))
 }
 
@@ -99,7 +122,9 @@ export interface GatePolicyViolation {
  * unconstrained. `buildCreateGateTx` applies this check before it builds anything.
  */
 export function validateGatePolicy(policy: GatePolicy): GatePolicyViolation | null {
+  // Valid when freezing already requires an unpaused gate, or when pausing blocks neither decryption nor access.
   if (policy.freezeRequiresUnpaused || !(policy.pauseBlocksDecryption || policy.pauseBlocksAccess)) return null
+  // Otherwise the contract would abort `new_gate_policy` with code 15; report it in the same words as `ACCESS_GATE_ABORTS`.
   return {
     name: 'E_POLICY_COMBINATION',
     abortCode: 15,
@@ -115,6 +140,7 @@ export function validateGatePolicy(policy: GatePolicy): GatePolicyViolation | nu
  */
 export function buildPurchaseTx(cfg: AccessGateConfig, priceMist: bigint | number): Transaction {
   const tx = new Transaction()
+  // Exactly the price: the contract refunds an overpayment, but a wallet shows the split amount, so it should be the true cost.
   const payment = splitFromGas(tx, priceMist)
   tx.moveCall({
     target: `${cfg.packageId}::access_gate::purchase`,
@@ -134,7 +160,9 @@ export const MIN_NONCE_BYTES = 8
  * @throws {Error} if `nftType` is not an access NFT type, or `soulbound` disagrees with it.
  */
 function consumeFunction(cfg: AccessGateConfig): 'consume' | 'consume_soulbound' {
+  // The NFT type is the source of truth (normalising also validates it).
   const soulboundType = parseStructTag(normalizeAccessNftType(cfg.nftType)).name === 'SoulboundAccessNFT'
+  // The optional flag is a cross-check only: a disagreement means the config is wrong, and building either variant would abort on-chain.
   if (cfg.soulbound !== undefined && cfg.soulbound !== soulboundType) {
     throw new Error(`cfg.soulbound (${cfg.soulbound}) disagrees with cfg.nftType (${cfg.nftType})`)
   }
@@ -152,12 +180,15 @@ export function buildConsumeTx(
   nonce: string,
 ): Transaction {
   const tx = new Transaction()
+  // Which entry point (`consume` or `consume_soulbound`); this also validates the config before anything is built.
   const fn = consumeFunction(cfg)
+  // The nonce is the challenge text, passed on chain as its UTF-8 bytes (a `vector<u8>`).
   const nonceBytes = Array.from(new TextEncoder().encode(nonce))
   // The contract aborts with E_INVALID_NONCE after the user has signed and paid gas; refuse before the prompt.
   if (nonceBytes.length < MIN_NONCE_BYTES) {
     throw new RangeError(`nonce must be at least ${MIN_NONCE_BYTES} bytes (got ${nonceBytes.length})`)
   }
+  // Argument order is the contract's: the NFT, the gate, the platform config (version gate), then the nonce.
   tx.moveCall({
     target: `${cfg.packageId}::access_gate::${fn}`,
     arguments: [tx.object(nftId), tx.object(cfg.gateId), tx.object(cfg.platformConfigId), tx.pure.vector('u8', nonceBytes)],
@@ -195,10 +226,13 @@ export function buildCreateGateTx(
     freeGateFeeMist?: bigint | number
   },
 ): Transaction {
+  // The policy chosen, or the unrestricted default.
   const p = opts.policy ?? DEFAULT_GATE_POLICY
+  // Refuse an invalid combination here: the contract would abort after the operator has paid gas.
   const violation = validateGatePolicy(p)
   if (violation) throw new Error(violation.message)
   const tx = new Transaction()
+  // The policy is an on-chain value, built by `new_gate_policy` in the same block and passed to the create call.
   const policy = only(tx.moveCall({
     target: `${packageId}::access_gate::new_gate_policy`,
     arguments: [
@@ -208,6 +242,7 @@ export function buildCreateGateTx(
       tx.pure.bool(p.pauseBlocksAccess),
     ],
   }))
+  // The arguments both create functions end with, in the contract's order. The recipient is validated (full address, not zero).
   const tail = [
     tx.pure.address(toPaymentRecipient(opts.paymentRecipient)),
     tx.pure.u64(toU64(opts.defaultUses)),
@@ -218,14 +253,18 @@ export function buildCreateGateTx(
     tx.pure.string(opts.nftDescription),
     policy,
   ]
+  // A zero price means a free gate, which has its own entry point and a one-off fee.
   if (BigInt(opts.priceMist) === 0n) {
+    // The caller reads the fee from the platform config; guessing it would abort or overpay.
     if (opts.freeGateFeeMist === undefined) throw new Error('freeGateFeeMist is required for a free gate')
+    // The fee is split from gas; the contract refunds any excess.
     const fee = splitFromGas(tx, opts.freeGateFeeMist)
     tx.moveCall({
       target: `${packageId}::access_gate::create_free_gate`,
       arguments: [tx.object(platformConfigId), fee, ...tail],
     })
   } else {
+    // A paid gate: the price is an argument (the contract checks it against the platform minimum).
     tx.moveCall({
       target: `${packageId}::access_gate::create_gate`,
       arguments: [tx.object(platformConfigId), tx.pure.u64(toU64(opts.priceMist)), ...tail],
@@ -250,6 +289,7 @@ function buildGateAdminCall(
   extraArgs: (tx: Transaction) => MoveCallArg[],
 ): Transaction {
   const tx = new Transaction()
+  // `fn` is one of the contract's admin entry points.
   tx.moveCall({
     target: `${ctx.packageId}::access_gate::${fn}`,
     // Every gate setter reads the shared PlatformConfig after the gate (version gate).
@@ -273,6 +313,7 @@ export function buildSetPriceTx(ctx: GateAdminContext, priceMist: bigint | numbe
  */
 export function buildMakeGateFreeTx(ctx: GateAdminContext, feeMist: bigint | number): Transaction {
   const tx = new Transaction()
+  // Zero is allowed here: a gate that already paid the fee passes 0 and the split is of nothing.
   const fee = splitFromGas(tx, feeMist)
   tx.moveCall({
     target: `${ctx.packageId}::access_gate::make_gate_free`,
@@ -330,6 +371,7 @@ export function buildAirdropTx(
   commissionMist: bigint | number,
 ): Transaction {
   const tx = new Transaction()
+  // The commission a purchase would carry, paid by the admin.
   const payment = splitFromGas(tx, commissionMist)
   tx.moveCall({
     target: `${ctx.packageId}::access_gate::airdrop`,
@@ -338,6 +380,7 @@ export function buildAirdropTx(
       tx.object(ctx.gateId),
       tx.object(ctx.platformConfigId),
       payment,
+      // A full address: a short paste would mint the NFT to an unowned address.
       tx.pure.address(toAddress(recipient)),
     ],
   })
@@ -372,6 +415,7 @@ export const MAX_COMMISSION_BPS = 1_000n
 
 /** The platform's current commission terms. */
 export function platformCommissionTerms(platform: PlatformConfigInfo): CommissionTerms {
+  // Rename the two config fields into the shape the arithmetic takes.
   return { bps: platform.commissionBps, minMist: platform.minCommissionMist }
 }
 
@@ -382,9 +426,13 @@ export function platformCommissionTerms(platform: PlatformConfigInfo): Commissio
  */
 export function commissionForPrice(priceMist: bigint | number, terms: CommissionTerms): bigint {
   const price = toU64(priceMist)
+  // A free mint pays nothing, whatever the floor says.
   if (price === 0n) return 0n
+  // The percentage share, rounded down (bigint division truncates), as the contract does.
   const share = (price * terms.bps) / BPS_DENOMINATOR
+  // The hard cap: 10% of the price.
   const cap = (price * MAX_COMMISSION_BPS) / BPS_DENOMINATOR
+  // The floor applies first, the cap last, so a tiny price pays at most its 10%.
   const commission = share > terms.minMist ? share : terms.minMist
   return commission > cap ? cap : commission
 }
@@ -394,6 +442,7 @@ export function commissionForPrice(priceMist: bigint | number, terms: Commission
  * commission, so the floor never exceeds the 10% cap; at least 1 MIST.
  */
 export function minimumPaidPriceMist(minCommissionMist: bigint | number): bigint {
+  // Ceiling division: the smallest price whose 10% cap is at least the minimum commission.
   const min = (toU64(minCommissionMist) * BPS_DENOMINATOR + MAX_COMMISSION_BPS - 1n) / MAX_COMMISSION_BPS
   // Saturates at u64::MAX like the contract's `min_paid_price_mist`.
   if (min > MAX_U64) return MAX_U64
@@ -408,5 +457,6 @@ export function gateCommissionMist(
   gate: Pick<OwnedGate, 'priceMist' | 'lockedCommission'>,
   platform: PlatformConfigInfo,
 ): bigint {
+  // The snapshot wins when the gate locked one at freeze; otherwise the platform's terms as they are now.
   return commissionForPrice(gate.priceMist, gate.lockedCommission ?? platformCommissionTerms(platform))
 }

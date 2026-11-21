@@ -1,3 +1,8 @@
+/**
+ * Tests for the gate and platform reads (`src/gates.ts`): every parser fails closed (a missing or mistyped field gives `null`, never a default, so a
+ * missing price cannot read as a free gate), types are matched exactly (a look-alike package is refused), and the discovery calls page, merge and bound
+ * their requests. The chain is a double built from `CoreObject` fixtures in the gRPC shape.
+ */
 import { describe, it, expect, vi } from 'vitest'
 import {
   parseAdminCap,
@@ -12,8 +17,11 @@ import {
 } from '../src/gates.js'
 import type { CoreObject, OwnedObjectsClient, SuiObjectClient } from '../src/types.js'
 
+// A short package id on purpose: the code under test must normalise it.
 const PKG = '0xa1'
+/** The same id in its full form, which is how a node reports types. */
 const PKG_LONG = `0x${'0'.repeat(62)}a1`
+/** A different package whose id starts like ours: a suffix or prefix match would wrongly accept it. */
 const LOOKALIKE = '0xa1a1'
 const ADMIN_CAP_TYPE = `${PKG}::access_gate::AdminCap`
 const GATE_TYPE = `${PKG}::access_gate::Gate`
@@ -25,6 +33,7 @@ const CAP_A = id('ca')
 const CAP_B = id('cb')
 const RECIPIENT = id('e1')
 const TREASURY = id('7e')
+/** The unrestricted policy in the node's snake_case rendering. */
 const NO_POLICY = { freeze_requires_unpaused: false, lock_commission_on_freeze: false, pause_blocks_decryption: false, pause_blocks_access: false }
 
 /** A core-API object (gRPC): id + type top-level, Move struct fields flat under `json`. */
@@ -32,6 +41,7 @@ function capObj(adminCapId: string, gateId: string): CoreObject {
   return { objectId: adminCapId, type: ADMIN_CAP_TYPE, json: { id: { id: adminCapId }, gate_id: gateId } }
 }
 
+/** A valid `Gate` object, with `over` replacing any of its fields (a field set to `undefined` removes it from a test's case). */
 function gateObj(gateId: string, over: Record<string, unknown> = {}): CoreObject {
   return {
     objectId: gateId,
@@ -62,6 +72,7 @@ describe('gate discovery (gRPC core API)', () => {
     expect(parseAdminCap(capObj(CAP_A, GATE_A), PKG)).toEqual({ adminCapId: CAP_A, gateId: GATE_A })
   })
 
+  // A different struct that happens to carry a `gate_id` must not be mistaken for a cap.
   it('parseAdminCap rejects a non-AdminCap object', () => {
     const wrong: CoreObject = { objectId: '0x9', type: `${PKG}::other::Thing`, json: { gate_id: GATE_A } }
     expect(parseAdminCap(wrong, PKG)).toBeNull()
@@ -113,6 +124,7 @@ describe('gate discovery (gRPC core API)', () => {
     expect(g?.freeFeePaid).toBe(true)
   })
 
+  // Both renderings of `Option` are read: the flat gRPC one (null or the struct) and the old JSON-RPC `{ vec: [...] }`.
   it('parseGate accepts the JSON-RPC Option shape for locked_commission', () => {
     const vec = { vec: [{ fields: { bps: '30', min_mist: '5' } }] }
     expect(parseGate(gateObj(GATE_A, { locked_commission: vec }), PKG)?.lockedCommission).toEqual({ bps: 30n, minMist: 5n })
@@ -120,6 +132,7 @@ describe('gate discovery (gRPC core API)', () => {
   })
 
   it('parseGate treats a missing locked_commission key as malformed, never as "no lock"', () => {
+    // `null` is a real answer (no lock); an absent key means the field was renamed or dropped, which must not read as "no lock".
     const obj = gateObj(GATE_A, {})
     const data = (obj as { json: Record<string, unknown> }).json
     expect(parseGate(obj, PKG)?.lockedCommission).toBeNull() // explicit null is "none"
@@ -135,6 +148,7 @@ describe('gate discovery (gRPC core API)', () => {
     // A missing price must not read as a free gate.
     const { price_mist: _p, ...noPrice } = gateObj(GATE_A).json!
     expect(parseGate({ ...gateObj(GATE_A), json: noPrice }, PKG)).toBeNull()
+    // A string where a bool belongs, a negative and an over-range u64, a non-address, a missing policy, a non-bool flag and a partial lock: all refused.
     expect(parseGate(gateObj(GATE_A, { paused: 'false' }), PKG)).toBeNull()
     expect(parseGate(gateObj(GATE_A, { price_mist: '-1' }), PKG)).toBeNull()
     expect(parseGate(gateObj(GATE_A, { price_mist: '18446744073709551616' }), PKG)).toBeNull()
@@ -144,6 +158,7 @@ describe('gate discovery (gRPC core API)', () => {
     expect(parseGate(gateObj(GATE_A, { locked_commission: { bps: '1' } }), PKG)).toBeNull()
   })
 
+  // Short and upper-case spellings in, the canonical lower-case 64-digit form out.
   it('parseGate and parseAdminCap return normalised ids', () => {
     expect(parseGate(gateObj('0xA'), PKG)?.gateId).toBe(GATE_A)
     expect(parseGate(gateObj(GATE_A, { payment_recipient: '0xE1' }), PKG)?.paymentRecipient).toBe(RECIPIENT)
@@ -151,6 +166,7 @@ describe('gate discovery (gRPC core API)', () => {
   })
 
   it('fetchAdminCaps reads every page of the normalised AdminCap type', async () => {
+    // Two pages: the first has a cursor, the second does not.
     const listOwnedObjects = vi.fn(async ({ cursor }: { cursor?: string | null }) =>
       cursor
         ? { objects: [capObj(CAP_B, GATE_B)], hasNextPage: false, cursor: null }
@@ -168,6 +184,7 @@ describe('gate discovery (gRPC core API)', () => {
   })
 
   it('ownsPlatformAdminCap is true only for this package\'s cap', async () => {
+    // A client whose owner holds one object of the given type.
     const holding = (type: string): OwnedObjectsClient => ({
       core: { listOwnedObjects: vi.fn(async () => ({ objects: [{ objectId: '0xp', type }], hasNextPage: false, cursor: null })) },
     })
@@ -194,6 +211,7 @@ describe('gate discovery (gRPC core API)', () => {
           hasNextPage: false,
           cursor: null,
         })),
+        // Two different gates, so the merge of each cap with its own gate is visible.
         getObject: vi.fn(async ({ objectId }: { objectId: string }) => ({
           object: objectId === GATE_A ? gateObj(GATE_A) : gateObj(GATE_B, { paused: true, frozen: true }),
         })),
@@ -210,7 +228,9 @@ describe('gate discovery (gRPC core API)', () => {
   })
 
   it('fetchOwnedGates reads gates with bounded concurrency and keeps the cap order', async () => {
+    // Sixty caps against a limit of ten in flight.
     const caps = Array.from({ length: 60 }, (_, i) => capObj(id(`c${i.toString(16)}`), id(`a${i.toString(16)}`)))
+    // `peak` records the most reads that were ever running at once.
     let inFlight = 0
     let peak = 0
     const client: OwnedObjectsClient & SuiObjectClient = {
@@ -219,6 +239,7 @@ describe('gate discovery (gRPC core API)', () => {
         getObject: vi.fn(async ({ objectId }: { objectId: string }) => {
           inFlight++
           peak = Math.max(peak, inFlight)
+          // A short real delay so the reads genuinely overlap.
           await new Promise((r) => setTimeout(r, 2))
           inFlight--
           return { object: gateObj(objectId) }
@@ -228,6 +249,7 @@ describe('gate discovery (gRPC core API)', () => {
     const gates = await fetchOwnedGates(client, '0xowner', PKG)
     expect(gates).toHaveLength(60)
     expect(gates.map((g) => g.gateId)).toEqual(caps.map((c) => (c.json as { gate_id: string }).gate_id))
+    // Bounded, but not serial: the limit is respected and the reads did run concurrently.
     expect(peak).toBeLessThanOrEqual(GATE_FETCH_CONCURRENCY)
     expect(peak).toBeGreaterThan(1)
   })
@@ -236,6 +258,7 @@ describe('gate discovery (gRPC core API)', () => {
     const client: OwnedObjectsClient & SuiObjectClient = {
       core: {
         listOwnedObjects: vi.fn(async () => ({ objects: [capObj(CAP_A, GATE_A)], hasNextPage: false, cursor: null })),
+        // The cap points at an object that is not a gate (here a coin): it is skipped, not an error.
         getObject: vi.fn(async () => ({ object: { objectId: GATE_A, type: '0x2::coin::Coin<0x2::sui::SUI>' } as CoreObject })),
       },
     }
@@ -244,6 +267,7 @@ describe('gate discovery (gRPC core API)', () => {
 })
 
 describe('PlatformConfig commission', () => {
+  // A valid config object in the gRPC shape.
   const cfgObj: CoreObject = {
     objectId: id('cf'),
     type: `${PKG}::access_gate::PlatformConfig`,

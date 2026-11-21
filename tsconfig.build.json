@@ -1,11 +1,17 @@
+// The build for the published declarations: `npm run build` runs `tsc -p tsconfig.build.json` and writes dist/*.d.ts.
+// Only declarations are emitted: the package ships its TypeScript source (see `exports` in package.json), and the consuming app's bundler compiles it.
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    // Turn emission back on (the base config disables it)...
     "noEmit": false,
+    // ...for declarations only, so no JavaScript is produced.
     "declaration": true,
     "emitDeclarationOnly": true,
+    // The source root and the output directory keep `dist/index.d.ts` beside `src/index.ts`, which is what the `types` entries in `exports` name.
     "rootDir": "./src",
     "declarationDir": "./dist"
   },
+  // Only the source: the tests have no declarations to publish.
   "include": ["src/**/*.ts"]
 }

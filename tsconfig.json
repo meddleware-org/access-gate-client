@@ -1,16 +1,28 @@
+// TypeScript settings for editing, type-checking (`npm run type-check`) and the tests. It covers src/ AND tests/, so a type error in a test fails CI.
+// The published declarations are built from the narrower tsconfig.build.json, which extends this file.
 {
   "compilerOptions": {
+    // The newest syntax and library: the code is shipped as TypeScript source and compiled by the consuming app's bundler, which targets its own browsers.
     "target": "esnext",
+    // `DOM` is needed for `fetch`, `Response`, `AbortSignal` and `TextEncoder`, which the indexer reader uses (Node 26 and every browser have them).
     "lib": ["esnext", "DOM"],
+    // Node's types for the tests (`node:fs`, `Buffer`); nothing else is ambient.
     "types": ["node"],
     "module": "esnext",
+    // Resolution as a bundler does it, so the `.js` import specifiers in the source resolve to the `.ts` files.
     "moduleResolution": "Bundler",
+    // The strict family: null checks, no implicit any, and the rest.
     "strict": true,
+    // An index access may be undefined: array and record lookups must be checked, which the parsers do.
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
+    // Do not type-check the dependencies' declaration files (they are the SDK's business).
     "skipLibCheck": true,
+    // The same file name with a different case is a different file on some systems; refuse the mix.
     "forceConsistentCasingInFileNames": true,
+    // Type-check only; the build config turns emission on for declarations.
     "noEmit": true
   },
+  // The source and the tests (the integration tests included).
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

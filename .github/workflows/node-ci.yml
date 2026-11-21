@@ -1,3 +1,6 @@
+# Node CI for the access-gate client: install, dependency checks, the deployment-id drift check, type-check, lint, tests, the declaration build and a
+# check of what the tarball would contain. It runs on every push to main and every pull request, and the release workflow (npm-publish.yml) calls it on
+# the tagged commit so a tag that fails never publishes. The live testnet checks are a separate, weekly workflow (live-read.yml).
 name: Node CI
 
 on:
@@ -7,9 +10,11 @@ on:
   # The release workflow runs the same checks on the tagged commit.
   workflow_call:
 
+# Read-only: CI needs nothing but the checkout.
 permissions:
   contents: read
 
+# No tool may phone home from CI (the fleet's privacy rule; npm, Node and other tools honour it).
 env:
   DO_NOT_TRACK: "1"
 
@@ -18,36 +23,48 @@ jobs:
     name: Type-check & test
     runs-on: ubuntu-latest
     steps:
+      # Actions are pinned by full commit SHA with the version in a comment (D12).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Node 26 is the fleet baseline (D56).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26'
 
+      # `npm ci` installs exactly the lockfile, so CI tests what was reviewed.
       - name: Install dependencies
         run: npm ci
 
+      # Fails if a peer range is unsatisfied or the tree is inconsistent (the SDK is a peer, so a mismatch would reach consumers).
       - name: Dependency tree is valid (peer ranges satisfied)
         run: npm ls --all >/dev/null
 
+      # High and critical advisories fail the build. This repository does not depend on @meddleware/frontend-config, so it does not use that package's gate
+      # (which adds an expiring allow-list); the threshold is the same, and there is no allow-list to keep.
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
+      # src/deployments.ts is generated from the Move package's records; this fails if the committed file differs from what they produce.
       - name: Deployment ids match @meddleware/access-gate-sui
         run: npm run check:deployments
 
+      # tsc over src/ and tests/ (the tests are included, so a type error in a test fails here).
       - name: Type-check
         run: npm run type-check
 
+      # eslint with the TypeScript rule set (there are no Vue files in this package).
       - name: Lint JS (eslint)
         run: npm run lint
 
+      # The offline unit tests (the live testnet suite is weekly, in live-read.yml).
       - name: Test
         run: npm test
 
+      # The published declarations; failing here means a type that cannot be declared.
       - name: Build declarations
         run: npm run build
 
+      # What `npm publish` would ship, checked against an allow-list: the entry points must be there and nothing else (no tests, no config, no secrets).
       - name: Package contents
         run: |
           npm pack --dry-run --json > pack.json

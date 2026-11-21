@@ -1,3 +1,9 @@
+/**
+ * Tests for the event reads (`src/events.ts`): BCS decoding of every kind, exact package matching, a strict layout check (a field appended by an
+ * upgrade is an error, not silently dropped), the full-node listing and its paging, the indexer path with its fallbacks, and the indexer reader's
+ * hardening (https only, no redirects, a byte cap, field checks, freshness). Events are built with test-side encoders written from the Move structs, and
+ * the indexer and the node are doubles.
+ */
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { bcs } from '@mysten/sui/bcs'
 import { normalizeSuiAddress, toBase64 } from '@mysten/sui/utils'
@@ -14,15 +20,23 @@ import {
 import type { ListAccessGateEventsOptions } from '../src/events.js'
 import type { CoreEventEntry, EventsClient } from '../src/types.js'
 
+// A short package id on purpose: the code under test must normalise it.
 const PKG = '0xa1'
+/** The same id in the full form a node reports. */
 const PKG_LONG = normalizeSuiAddress(PKG)
+/** A different package whose id starts like ours. */
 const LOOKALIKE = '0xa1a1'
+// Two gates, so a filter can be seen to keep one and drop the other; an NFT and an address to put in the fields.
 const GATE_A = normalizeSuiAddress('0xa')
+/** The second gate. */
 const GATE_B = normalizeSuiAddress('0xb')
+/** An NFT id. */
 const NFT = normalizeSuiAddress('0x11')
+/** An address for sender, recipient and consumer fields. */
 const ALICE = normalizeSuiAddress('0xa11ce')
 
-// Test-side encoders, written from the Move structs independently of the parser's layouts.
+// Test-side encoders, written from the Move structs independently of the parser's layouts: a wrong layout in `src/events.ts` would decode its own
+// output but not these bytes.
 const minted = bcs.struct('AccessMintedEvent', {
   nft_id: bcs.Address,
   gate_id: bcs.Address,
@@ -66,7 +80,9 @@ const created = bcs.struct('GateCreatedEvent', {
   timestamp_ms: bcs.u64(),
 })
 
+/** A counter that gives each fake event a distinct transaction digest. */
 let seq = 0
+/** A full-node event row of the given Move struct, with the given BCS bytes (defaults: our package, checkpoint 100). */
 function entry(name: string, bytes: Uint8Array, pkg = PKG, checkpoint = '100'): CoreEventEntry {
   return {
     eventType: `${pkg}::access_gate::${name}`,
@@ -77,6 +93,7 @@ function entry(name: string, bytes: Uint8Array, pkg = PKG, checkpoint = '100'): 
     eventIndex: 0,
   }
 }
+/** A purchase event for `gate`. */
 const mintedEntry = (gate: string, checkpoint = '100') =>
   entry(
     'AccessMintedEvent',
@@ -86,6 +103,7 @@ const mintedEntry = (gate: string, checkpoint = '100') =>
     PKG,
     checkpoint,
   )
+/** A consume event for `gate` with a nonce of nine bytes. */
 const consumedEntry = (gate: string, checkpoint = '100') =>
   entry(
     'AccessConsumedEvent',
@@ -115,6 +133,7 @@ describe('parseAccessGateEvent', () => {
     })
   })
 
+  // The policy's four booleans are decoded by position, so the test sets two and checks the camelCase names land on the right ones.
   it('decodes GateCreated with its policy', () => {
     const bytes = created
       .serialize({
@@ -141,6 +160,7 @@ describe('parseAccessGateEvent', () => {
     })
   })
 
+  // `Option` is a 0 byte (none) or 1 and the value (some); both must round-trip.
   it('decodes an Option of commission terms', () => {
     const some = frozen.serialize({ gate_id: GATE_A, locked_commission: { bps: 20, min_mist: 1000 }, timestamp_ms: 1 }).toBytes()
     const none = frozen.serialize({ gate_id: GATE_A, locked_commission: null, timestamp_ms: 1 }).toBytes()
@@ -164,6 +184,7 @@ describe('parseAccessGateEvent', () => {
     expect(e && eventGateId(e)).toBeNull()
   })
 
+  // Indexer rows carry base64; the event type may be written in the full address form.
   it('accepts base64 BCS (indexer rows) and long-form addresses', () => {
     const e = mintedEntry(GATE_A)
     const row = { ...e, bcs: toBase64(e.bcs as Uint8Array), eventType: `${PKG_LONG}::access_gate::AccessMintedEvent` }
@@ -172,11 +193,13 @@ describe('parseAccessGateEvent', () => {
 
   it('rejects trailing bytes: a field appended by a later upgrade must not decode silently', () => {
     const e = mintedEntry(GATE_A)
+    // Three extra bytes, as a field added by a package upgrade would add; and, the other way round, a truncated row.
     const longer = new Uint8Array([...(e.bcs as Uint8Array), 1, 2, 3])
     expect(() => parseAccessGateEvent({ ...e, bcs: longer }, PKG)).toThrow(/layout/)
     expect(() => parseAccessGateEvent({ ...e, bcs: (e.bcs as Uint8Array).slice(0, -1) }, PKG)).toThrow()
   })
 
+  // `Object.hasOwn` in the parser: a plain `LAYOUTS[name]` would find `constructor` on the prototype and try to use it.
   it('does not treat Object prototype keys as event names', () => {
     const e = mintedEntry(GATE_A)
     for (const name of ['constructor', 'toString', 'hasOwnProperty']) {
@@ -191,10 +214,12 @@ describe('parseAccessGateEvent', () => {
     expect(parseAccessGateEvent({ ...e, eventType: `${PKG}::access_gate::Unknown` }, PKG)).toBeNull()
   })
 
+  // Two bytes cannot hold an `AccessMintedEvent`; for a full-node row this is layout drift and must throw.
   it('throws on bytes that do not decode', () => {
     expect(() => parseAccessGateEvent(entry('AccessMintedEvent', new Uint8Array([1, 2])), PKG)).toThrow()
   })
 
+  // Eight kinds today; a ninth in the contract must be added to the client and this count.
   it('names every kind at the original id', () => {
     expect(ACCESS_GATE_EVENT_KINDS).toHaveLength(8)
     expect(accessGateEventType(PKG, 'AccessConsumed')).toBe(`${PKG_LONG}::access_gate::AccessConsumedEvent`)
@@ -203,6 +228,7 @@ describe('parseAccessGateEvent', () => {
 
 /** A client serving `pages` newest first (cursor = page index). */
 function eventsClient(pages: CoreEventEntry[][]) {
+  // The page index doubles as the cursor.
   const listEvents = vi.fn(async ({ before }: { before?: string | null }) => {
     const i = before ? Number(before) : 0
     const hasNextPage = i + 1 < pages.length
@@ -213,6 +239,7 @@ function eventsClient(pages: CoreEventEntry[][]) {
 
 describe('listAccessGateEvents (full node)', () => {
   it('queries the whole module for several kinds and filters here', async () => {
+    // Two kinds are wanted, so the node cannot filter by one type: the module filter is used and the kind is checked here.
     const client = eventsClient([[mintedEntry(GATE_A, '9'), consumedEntry(GATE_A, '8')]])
     const page = await listAccessGateEvents(client, { originalId: PKG, kinds: ['AccessConsumed', 'AccessBurned'] })
     expect(client.core.listEvents).toHaveBeenCalledWith(
@@ -231,6 +258,7 @@ describe('listAccessGateEvents (full node)', () => {
   })
 
   it('filters by gate across pages and returns a continuation cursor', async () => {
+    // The first page has no match, the second one does: the scan continues until the limit is reached, then offers the rest through the cursor.
     const client = eventsClient([[mintedEntry(GATE_B)], [mintedEntry(GATE_A)], [mintedEntry(GATE_A)]])
     const page = await listAccessGateEvents(client, { originalId: PKG, gateId: '0xa', limit: 1 })
     expect(page.events).toHaveLength(1)
@@ -241,6 +269,7 @@ describe('listAccessGateEvents (full node)', () => {
   })
 
   it('stops after maxPages without filling the page', async () => {
+    // The match is on the third page but only two may be scanned: an empty page with a cursor, not a long wait.
     const client = eventsClient([[mintedEntry(GATE_B)], [mintedEntry(GATE_B)], [mintedEntry(GATE_A)]])
     const page = await listAccessGateEvents(client, { originalId: PKG, gateId: GATE_A, maxPages: 2 })
     expect(page.events).toEqual([])
@@ -255,10 +284,13 @@ describe('listAccessGateEvents (full node)', () => {
 })
 
 describe('listAccessGateEvents (indexer)', () => {
+  // A placeholder indexer host: the fetch is a double, so nothing is contacted.
   const INDEXER = 'https://indexer.example'
+  // An event as the indexer serves it: the bytes in base64.
   const row = (e: CoreEventEntry) => ({ ...e, bcs: toBase64(e.bcs as Uint8Array) })
 
   it('reads from the indexer and keeps only this package\'s events of the asked kinds', async () => {
+    // The indexer is not trusted: a look-alike package's event, a different kind and a valid one arrive together, and only the valid one may survive.
     const fake = { ...row(mintedEntry(GATE_A)), eventType: `${LOOKALIKE}::access_gate::AccessMintedEvent` }
     const fetchFn = vi.fn(async () =>
       Response.json({ events: [row(consumedEntry(GATE_A)), row(mintedEntry(GATE_A)), fake], cursor: 'c1', indexedFromCheckpoint: '42', polledAt: Date.now() }),
@@ -275,6 +307,7 @@ describe('listAccessGateEvents (indexer)', () => {
     expect(page.events.map((e) => e.kind)).toEqual(['AccessConsumed'])
     expect(page.cursor).toEqual({ source: 'indexer', value: 'c1' })
     expect(page.indexedFromCheckpoint).toBe('42')
+    // The node is not asked at all when the indexer answers.
     expect(client.core.listEvents).not.toHaveBeenCalled()
     const url = new URL(String((fetchFn.mock.calls[0] as unknown[])[0]))
     expect(url.pathname).toBe('/v1/testnet/access-gate/events')
@@ -283,6 +316,7 @@ describe('listAccessGateEvents (indexer)', () => {
     expect(url.searchParams.get('limit')).toBe('10')
   })
 
+  // A first page can fall back safely: the full node is the source of truth.
   it('falls back to the full node on a first page and says why', async () => {
     const fetchFn = vi.fn(async () => new Response('down', { status: 503 }))
     const client = eventsClient([[mintedEntry(GATE_A)]])
@@ -295,6 +329,7 @@ describe('listAccessGateEvents (indexer)', () => {
     expect(page.indexerError).toMatch(/503/)
   })
 
+  // A later page cannot fall back: the cursor means nothing to the full node.
   it('does not switch source mid-listing', async () => {
     const fetchFn = vi.fn(async () => {
       throw new Error('timeout')
@@ -329,6 +364,7 @@ describe('indexer rows are untrusted (display-only)', () => {
 
   it('skips and counts malformed or undecodable rows instead of failing the page', async () => {
     const good = row(mintedEntry(GATE_A))
+    // One good row among eight bad ones: each bad shape (missing or mistyped fields, bad base64, undecodable bytes, non-objects) is counted, not thrown.
     const rows = [
       good,
       { ...good, sender: undefined }, // no sender
@@ -346,10 +382,12 @@ describe('indexer rows are untrusted (display-only)', () => {
       cursor: { source: 'indexer', value: 'c1' },
     })
     expect(page.events).toHaveLength(1)
+    // Every row but the first was invalid.
     expect(page.invalidRows).toBe(rows.length - 1)
     expect(page.cursor).toEqual({ source: 'indexer', value: 'c2' }) // pagination survives
   })
 
+  // The tolerance above is for the untrusted indexer only; the same bad row from the full node must still fail loudly.
   it('full-node rows keep throwing: that is real layout drift', async () => {
     const e = mintedEntry(GATE_A)
     const client = eventsClient([[{ ...e, bcs: new Uint8Array([1]) }]])
@@ -358,12 +396,15 @@ describe('indexer rows are untrusted (display-only)', () => {
 })
 
 describe('readIndexerEvents (shared indexer reader)', () => {
+  // A fetch double that returns the given body and status.
   const respond = (body: string, status = 200) => vi.fn(async () => new Response(body, { status }))
   /** A fresh head page body (the checks below are about the other fields). */
   const head = (extra: Record<string, unknown> = {}) => JSON.stringify({ events: [], cursor: null, polledAt: Date.now(), ...extra })
+  // An indexer source around a fetch double.
   const source = (url: string, fetchFn: ReturnType<typeof vi.fn>) => ({ url, network: 'testnet', fetch: fetchFn as unknown as typeof fetch })
 
   it('builds the URL from parsed parts and drops undefined params', async () => {
+    // The base path `/base` must be kept (hence the trailing-slash handling), and the undefined parameter must not appear.
     const polledAt = Date.now()
     const fetchFn = respond(JSON.stringify({ events: [], cursor: null, indexedFromCheckpoint: '7', polledAt }))
     const page = await readIndexerEvents(source('https://idx.example/base', fetchFn), 'v1/testnet/x', { a: '1', b: undefined })
@@ -379,6 +420,7 @@ describe('readIndexerEvents (shared indexer reader)', () => {
 
   it('refuses a path that leaves the indexer origin, and redirects', async () => {
     const fetchFn = respond(head())
+    // Each of these could resolve to another host; the fetch must never be called for them.
     for (const path of ['//evil.example/x', 'https://evil.example/x', '/abs', 'http:foo', 'a\\b']) {
       await expect(readIndexerEvents(source('https://idx.example', fetchFn), path, {})).rejects.toThrow(/relative|origin/)
     }
@@ -390,6 +432,7 @@ describe('readIndexerEvents (shared indexer reader)', () => {
   })
 
   it('caps the body by bytes while streaming, even without a Content-Length', async () => {
+    // An endless body with no Content-Length: only the running byte count can stop it.
     const stream = new ReadableStream<Uint8Array>({
       pull(c) {
         c.enqueue(new Uint8Array(1 << 18))
@@ -403,6 +446,7 @@ describe('readIndexerEvents (shared indexer reader)', () => {
   })
 
   it('rejects oversized, non-JSON and mis-shaped bodies', async () => {
+    // One check per failure: over the cap, not JSON, no events list, a non-string cursor, a non-string checkpoint and a 5xx status.
     const url = 'https://idx.example'
     await expect(readIndexerEvents(source(url, respond('x'.repeat((1 << 20) + 1))), 'v1', {})).rejects.toThrow(/too large/)
     await expect(readIndexerEvents(source(url, respond('<html>')), 'v1', {})).rejects.toThrow(/not JSON/)
@@ -416,11 +460,16 @@ describe('readIndexerEvents (shared indexer reader)', () => {
 })
 
 describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
+  // A placeholder indexer host.
   const INDEXER = 'https://indexer.example'
+  // A fixed "now", so ages are exact (the clock is faked below).
   const NOW = 1_800_000_000_000
+  // An indexer row, as above.
   const row = (e: CoreEventEntry) => ({ ...e, bcs: toBase64(e.bcs as Uint8Array) })
+  // An indexer double that serves one good event plus the given page fields (`polledAt` and the like).
   const serving = (body: Record<string, unknown>) =>
     vi.fn(async () => Response.json({ events: [row(mintedEntry(GATE_A))], cursor: 'c1', ...body }))
+  // List through the double, returning the node double too so a test can check whether it was used.
   const list = (fetchFn: ReturnType<typeof vi.fn>, extra: Partial<ListAccessGateEventsOptions> = {}) => {
     const client = eventsClient([[mintedEntry(GATE_A)]])
     const page = listAccessGateEvents(client, {
@@ -431,6 +480,7 @@ describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
     return { client, page }
   }
 
+  // Only `Date` is faked: real timers keep the promises and `AbortSignal.timeout` working.
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(NOW)
@@ -448,6 +498,7 @@ describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
   })
 
   it('uses a page exactly STALE_AFTER_MS old, and falls back one millisecond later', async () => {
+    // The boundary is inclusive: exactly the limit is fresh, one millisecond more is stale.
     expect(STALE_AFTER_MS).toBe(60_000)
     expect((await list(serving({ polledAt: NOW - STALE_AFTER_MS })).page).source).toBe('indexer')
     const { client, page } = list(serving({ polledAt: NOW - STALE_AFTER_MS - 1 }))
@@ -467,6 +518,7 @@ describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
   })
 
   it('falls back when polledAt is null or missing (the indexer has not polled yet)', async () => {
+    // The indexer has not polled yet (null) or the field is missing: neither can be shown to be fresh.
     for (const body of [{ polledAt: null }, {}]) {
       const { client, page } = list(serving(body))
       const p = await page
@@ -477,6 +529,7 @@ describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
   })
 
   it('falls back when polledAt is not an epoch-ms number', async () => {
+    // A string, zero, negatives, a fraction, a boolean, an object, NaN and an unsafe integer are not epoch-millisecond numbers.
     for (const polledAt of ['1800000000000', 0, -5, 1.5, true, {}, NaN, Number.MAX_SAFE_INTEGER + 2]) {
       const { client, page } = list(serving({ polledAt }))
       const p = await page
@@ -487,6 +540,7 @@ describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
   })
 
   it('tolerates a polledAt in the future up to CLOCK_SKEW_TOLERANCE_MS, and falls back beyond it', async () => {
+    // A client clock that runs behind must not make a healthy indexer look broken; the tolerance is five minutes.
     expect(CLOCK_SKEW_TOLERANCE_MS).toBe(300_000)
     expect((await list(serving({ polledAt: NOW + 60_000 })).page).source).toBe('indexer')
     expect((await list(serving({ polledAt: NOW + CLOCK_SKEW_TOLERANCE_MS })).page).source).toBe('indexer')
@@ -497,6 +551,7 @@ describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
     expect(client.core.listEvents).toHaveBeenCalledTimes(1)
   })
 
+  // History is immutable, so an old page is fine; only the head page's age matters.
   it('does not check staleness on an older page (immutable history), which carries no polledAt', async () => {
     const fetchFn = serving({})
     const client = eventsClient([[]])
@@ -522,6 +577,7 @@ describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
   })
 
   it('staleAfterMs overrides the limit; an invalid value is ignored', async () => {
+    // 30 s old: stale under a 10 s limit, fresh under the default.
     const polledAt = NOW - 30_000
     const tight = list(serving({ polledAt }), {
       indexer: { url: INDEXER, network: 'testnet', staleAfterMs: 10_000, fetch: serving({ polledAt }) as unknown as typeof fetch },
@@ -531,6 +587,7 @@ describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
       indexer: { url: INDEXER, network: 'testnet', staleAfterMs: 180_000, fetch: serving({ polledAt: NOW - 120_000 }) as unknown as typeof fetch },
     })
     expect((await loose.page).source).toBe('indexer')
+    // A nonsense limit must not disable the check: it falls back to the default.
     for (const staleAfterMs of [0, -1, NaN, Infinity]) {
       const f = serving({ polledAt: NOW - STALE_AFTER_MS - 1 })
       const bad = list(f, { indexer: { url: INDEXER, network: 'testnet', staleAfterMs, fetch: f as unknown as typeof fetch } })
@@ -539,6 +596,7 @@ describe('a stale head page counts as unavailable (sui-indexer F19)', () => {
   })
 
   it('readIndexerEvents throws on a stale head page and returns polledAt on a fresh one', async () => {
+    // An indexer source that serves the given page fields.
     const src = (body: Record<string, unknown>) => ({
       url: INDEXER,
       network: 'testnet',

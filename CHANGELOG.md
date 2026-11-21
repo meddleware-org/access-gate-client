@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Documentation: every file is annotated line by line and has a header; added `CONTRIBUTING.md`; README Development section; CLAUDE.md Commands, Gotchas and Related.
+- The generated `src/deployments.ts` gains explanatory comments (written in `scripts/gen-deployments.mjs`); its ids are unchanged.
+- The live read suite skips its event tests when a public full node has pruned the package's events, instead of failing (it had failed weekly since 2026-11-02). No change to the shipped code.
+
 ## [0.0.13] - 2026-10-30
 
 - Point documentation and examples at the machine zone (ADR-0005); depend on access-gate-sui 0.0.11. No API change.

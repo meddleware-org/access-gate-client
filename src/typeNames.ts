@@ -1,3 +1,13 @@
+/**
+ * @file The names of the Move types and events `access_gate` defines, and the exact-match type checks.
+ *
+ * Role: every type string in this package is built or compared here. Types live at the package's **original id** (they never move across upgrades),
+ * so a type is matched exactly, with normalised addresses and never by suffix: a look-alike `access_gate` module in another package must not match.
+ *
+ * Main exports: `accessGateType`, `accessNftType`, `isAccessGateType`, `normalizeAccessNftType`, `ACCESS_GATE_MODULE`. Used by `ownership.ts`,
+ * `gates.ts`, `events.ts` and `ptb.ts`; tested in `ownership.test.ts` and `events.test.ts`.
+ */
+// `normalizeStructTag` and `parseStructTag` give one canonical spelling of a type; `normalizeSuiAddress` pads an address to 64 digits.
 import { normalizeStructTag, normalizeSuiAddress, parseStructTag } from '@mysten/sui/utils'
 
 /** The Move module every `access_gate` type lives in. */
@@ -42,6 +52,7 @@ export function normalizeType(type: unknown): string | null {
   try {
     return normalizeStructTag(type)
   } catch {
+    // The SDK throws on a malformed tag; this function's contract is "null, not an exception".
     return null
   }
 }
@@ -68,6 +79,7 @@ export function isAccessGateType(
 export function normalizeAccessNftType(nftType: string): string {
   const normalized = normalizeType(nftType)
   const tag = normalized ? parseStructTag(normalized) : null
+  // Every condition below must hold: a parsable tag, in the `access_gate` module, one of the two NFT structs, with no type parameters.
   if (
     !normalized ||
     !tag ||

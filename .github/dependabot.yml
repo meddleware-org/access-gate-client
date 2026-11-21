@@ -1,14 +1,21 @@
+# Dependabot: weekly dependency updates for the client's npm tooling and its GitHub Actions. The fleet policy is D41 (grouped weekly updates, minor and
+# patch merged after CI) and D52 (declined majors as ignore rules), both in the workspace's docs/audit/LENS_GROUNDING_LOG.md. This is a library, not an
+# app, so it does not use the app template (frontend-config's templates/dependabot.app.yml). `@meddleware/access-gate-sui` is pinned exactly in
+# package.json because src/deployments.ts is generated from it: a bump of that one package is made by hand, followed by `npm run gen:deployments`.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    # Few open pull requests at once: the group below normally makes it one a week.
     open-pull-requests-limit: 5
     ignore:
+      # TypeScript majors are adopted deliberately, fleet-wide, not by a bot (D52; TypeScript 7 is the next one).
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
     groups:
+      # Minor and patch updates arrive as one pull request, merged once CI passes (D41).
       npm-minor-patch:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
@@ -17,5 +24,6 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
+      # Actions are pinned by full commit SHA (D12); one pull request moves every pin together.
       github-actions:
         patterns: ['*']

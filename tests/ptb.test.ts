@@ -1,3 +1,8 @@
+/**
+ * Tests for the transaction builders and their arithmetic (`src/ptb.ts`): the Move call each builder makes, the exact arguments and their order, the
+ * refusals that must happen *before* a wallet prompt (a short nonce, an invalid policy, a zero or truncated recipient, an unsafe number), and the
+ * commission maths that mirrors the contract. Transactions are inspected as data; nothing is signed or sent.
+ */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -37,6 +42,7 @@ const PLATFORM = '0x000000000000000000000000000000000000000000000000000000000000
 const NFT = '0x00000000000000000000000000000000000000000000000000000000000000b2'
 const RECIPIENT = '0x00000000000000000000000000000000000000000000000000000000000000c3'
 
+/** A purchasable gate's configuration (transferable `AccessNFT`). */
 const cfg: AccessGateConfig = {
   packageId: PKG,
   gateId: GATE,
@@ -45,15 +51,19 @@ const cfg: AccessGateConfig = {
   soulbound: false,
 }
 
+/** The soulbound NFT type under the same package. */
 const SOULBOUND_TYPE = `${PKG}::access_gate::SoulboundAccessNFT`
 
+/** A transaction's data as JSON text, so a test can look for a function name or an id in it. */
 function commandsJson(tx: { getData: () => unknown }): string {
   return JSON.stringify(tx.getData())
 }
 
 describe('commission helpers at the extremes', () => {
+  // 1% with a floor of 5 MIST.
   const terms = { bps: 100n, minMist: 5n }
 
+  // The contract saturates rather than overflowing; so must the preview.
   it('minimumPaidPriceMist saturates at u64::MAX like the contract', () => {
     expect(minimumPaidPriceMist((1n << 64n) - 1n)).toBe((1n << 64n) - 1n)
     expect(minimumPaidPriceMist(0n)).toBe(1n)
@@ -61,6 +71,7 @@ describe('commission helpers at the extremes', () => {
   })
 
   it('refuses unsafe numbers and out-of-range values instead of previewing a different amount', () => {
+    // 2^60 as a number is not exact, so a preview of it would be of some other amount.
     expect(() => commissionForPrice(2 ** 60, terms)).toThrow(RangeError)
     expect(() => minimumPaidPriceMist(2 ** 60)).toThrow(RangeError)
     expect(() => commissionForPrice(-1n, terms)).toThrow(RangeError)
@@ -74,6 +85,7 @@ describe('ptb builders', () => {
     const json = commandsJson(buildPurchaseTx(cfg, 500n))
     expect(json).toContain('"function":"purchase"')
     expect(json).toContain('"module":"access_gate"')
+    // The payment is split from gas (the wallet needs no separate coin).
     expect(json).toContain('SplitCoins')
     // gate, platformConfig, payment — three args
     expect(json).toContain(GATE.slice(2))
@@ -87,6 +99,7 @@ describe('ptb builders', () => {
   })
 
   it('buildConsumeTx derives the function from nftType, and refuses a disagreeing soulbound flag', () => {
+    // A config without the optional flag: the NFT type alone decides.
     const { soulbound: _unused, ...bare } = cfg
     expect(commandsJson(buildConsumeTx({ ...bare, nftType: SOULBOUND_TYPE }, NFT, 'nonce-12345'))).toContain('"function":"consume_soulbound"')
     expect(commandsJson(buildConsumeTx(bare, NFT, 'nonce-12345'))).toContain('"function":"consume"')
@@ -96,6 +109,7 @@ describe('ptb builders', () => {
   })
 
   it('buildConsumeTx refuses a nonce the contract would reject, before any signature', () => {
+    // The contract aborts after the user has paid gas, so the builder refuses first (the 'éé' case is four bytes, not two characters' worth).
     expect(() => buildConsumeTx(cfg, NFT, 'short')).toThrow(/at least 8 bytes/)
     expect(() => buildConsumeTx(cfg, NFT, '')).toThrow(/at least 8 bytes/)
     expect(() => buildConsumeTx(cfg, NFT, 'éé')).toThrow(/at least 8 bytes/) // 4 UTF-8 bytes
@@ -107,6 +121,7 @@ describe('ptb builders', () => {
     expect(json).toContain('"function":"consume_soulbound"')
   })
 
+  // The options of a paid gate; each case below changes one thing.
   const gateOpts = {
     priceMist: 10_000_000n,
     paymentRecipient: RECIPIENT,
@@ -131,6 +146,7 @@ describe('ptb builders', () => {
   })
 
   it('refuses a zero payment recipient before building (E_ZERO_ADDRESS, OQ12)', () => {
+    // Both create entry points and the setter share the rule.
     const zero = '0x' + '0'.repeat(64)
     expect(() => buildCreateGateTx(PKG, PLATFORM, { ...gateOpts, paymentRecipient: zero })).toThrow(/zero address/)
     expect(() => buildCreateGateTx(PKG, PLATFORM, { ...gateOpts, priceMist: 0n, freeGateFeeMist: 1n, paymentRecipient: zero })).toThrow(/zero address/)
@@ -153,6 +169,7 @@ describe('ptb builders', () => {
       ...gateOpts,
       policy: { freezeRequiresUnpaused: true, lockCommissionOnFreeze: false, pauseBlocksDecryption: true, pauseBlocksAccess: true },
     })
+    // Read the pure inputs back from the transaction data.
     const data = tx.getData() as { inputs: Array<{ Pure?: { bytes: string } }> }
     // The first four inputs are the policy bools, in order: true, false, true, true (BCS 1/0).
     expect(data.inputs.slice(0, 4).map((i) => i.Pure?.bytes)).toEqual(['AQ==', 'AA==', 'AQ==', 'AQ=='])
@@ -160,6 +177,7 @@ describe('ptb builders', () => {
 })
 
 describe('validateGatePolicy', () => {
+  // The same paid-gate options as above (the describe blocks are independent).
   const gateOpts = {
     priceMist: 10_000_000n,
     paymentRecipient: RECIPIENT,
@@ -179,6 +197,7 @@ describe('validateGatePolicy', () => {
     return { freezeRequiresUnpaused, lockCommissionOnFreeze, pauseBlocksDecryption, pauseBlocksAccess }
   }
   // Invalid: freezeRequiresUnpaused false and (decryption or access) true, whatever lockCommissionOnFreeze is.
+  // The six invalid combinations as 4-bit numbers (the bit order is `bits`').
   const INVALID = new Set([0b0001, 0b0010, 0b0011, 0b0101, 0b0110, 0b0111])
 
   it('matches the Move rule on all 16 combinations', () => {
@@ -198,9 +217,11 @@ describe('validateGatePolicy', () => {
     expect(validateGatePolicy({ ...DEFAULT_GATE_POLICY, freezeRequiresUnpaused: true, pauseBlocksAccess: true })).toBeNull()
   })
 
+  // The TypeScript rule is a copy of the contract's; this test reads the contract's own `assert!` so a change on either side fails.
   it('agrees with the rule in the published Move source', () => {
     const pkgJson = createRequire(import.meta.url).resolve('@meddleware/access-gate-sui/package.json')
     const source = readFileSync(join(dirname(pkgJson), 'sources', 'access_gate.move'), 'utf8')
+    // The text of the `assert!` in `new_gate_policy`, whitespace normalised before the comparison.
     const body = /public fun new_gate_policy\([^)]*\): GatePolicy \{\s*assert!\(([\s\S]*?)\);/.exec(source)?.[1] ?? ''
     expect(body.replace(/\s+/g, ' ').trim()).toBe(
       'freeze_requires_unpaused || !(pause_blocks_decryption || pause_blocks_access), E_POLICY_COMBINATION,',
@@ -215,6 +236,7 @@ describe('validateGatePolicy', () => {
     )
   })
 
+  // The converse of the refusal: no valid combination may be refused by the builder.
   it('buildCreateGateTx accepts every valid combination', () => {
     for (let n = 0; n < 16; n++) {
       if (INVALID.has(n)) continue
@@ -229,6 +251,7 @@ describe('policy + commission helpers', () => {
     expect(isRestrictivePolicy({ ...DEFAULT_GATE_POLICY, pauseBlocksAccess: true })).toBe(true)
   })
 
+  // 0.2% with a floor of 1,000,000 MIST: the platform's launch terms.
   const terms = { bps: 20n, minMist: 1_000_000n }
 
   it('commissionForPrice mirrors the contract: max(bps share, floor), capped at 10%', () => {
@@ -247,17 +270,20 @@ describe('policy + commission helpers', () => {
   })
 
   it('gateCommissionMist prefers the gate’s locked terms over the live platform terms', () => {
+    // Live terms with a higher floor than the gate's locked terms, so the two give different answers.
     const platform = { version: 1n, treasury: '0x1', commissionBps: 20n, minCommissionMist: 5_000_000n, freeGateFeeMist: 0n }
     expect(gateCommissionMist({ priceMist: 100_000_000n, lockedCommission: null }, platform)).toBe(5_000_000n)
     expect(gateCommissionMist({ priceMist: 100_000_000n, lockedCommission: terms }, platform)).toBe(1_000_000n)
   })
 })
 
+/** The admin capability's id in the fixtures. */
 const ADMIN_CAP = '0x00000000000000000000000000000000000000000000000000000000000000d4'
+/** The context every admin builder is called with. */
 const adminCtx: GateAdminContext = { packageId: PKG, gateId: GATE, adminCapId: ADMIN_CAP, platformConfigId: PLATFORM }
 
 describe('gate-admin PTB builders', () => {
-  // Each admin builder must call the named entry with [adminCap, gate, ...] as the first two args.
+  // Each admin builder must call the named entry with [adminCap, gate, ...] as the first two args. `inputs` is how many distinct inputs the transaction has.
   const cases: Array<{ name: string; fn: string; tx: () => { getData: () => unknown }; inputs: number }> = [
     { name: 'buildSetPriceTx', fn: 'set_price', tx: () => buildSetPriceTx(adminCtx, 10_000_000n), inputs: 4 },
     { name: 'buildSetPaymentRecipientTx', fn: 'set_payment_recipient', tx: () => buildSetPaymentRecipientTx(adminCtx, RECIPIENT), inputs: 4 },
@@ -280,6 +306,7 @@ describe('gate-admin PTB builders', () => {
       // adminCap + gate are always present
       expect(json).toContain(ADMIN_CAP.slice(2))
       expect(json).toContain(GATE.slice(2))
+      // The count of argument references is the arity: a dropped or extra argument changes it.
       const inputRefs = json.match(/"Input":\d+/g) ?? []
       expect(inputRefs.length).toBe(c.inputs)
     })
@@ -296,15 +323,18 @@ describe('gate-admin PTB builders', () => {
 // ── Exact argument values and order ──────────────────────────────────────────────
 // Each move-call argument is resolved to `obj:<id>`, `pure:<base64 BCS>`, `result:<cmd>` or
 // `gas`, so a swapped or mis-typed argument fails here instead of aborting on-chain.
+/** The parts of `Transaction.getData()` these tests read. */
 type TxData = {
   inputs: Array<{ UnresolvedObject?: { objectId: string }; Object?: unknown; Pure?: { bytes: string } }>
   commands: Array<{ MoveCall?: { function: string; arguments: Array<Record<string, unknown>> } }>
 }
 
+/** The arguments of the Move call to `fn`, each rendered as text (`obj:<id>`, `pure:<base64>`, `result:<n>`, `gas`) so a test can compare them as a list. */
 function callArgs(tx: { getData: () => unknown }, fn: string): string[] {
   const data = tx.getData() as TxData
   const call = data.commands.find((c) => c.MoveCall?.function === fn)?.MoveCall
   if (!call) throw new Error(`no move call ${fn}`)
+  // An argument is an input (an object or a pure value), the result of an earlier command, or the gas coin.
   return call.arguments.map((a) => {
     if (typeof a.Input === 'number') {
       const input = data.inputs[a.Input]!
@@ -319,15 +349,22 @@ function callArgs(tx: { getData: () => unknown }, fn: string): string[] {
   })
 }
 
+// Expected pure arguments, rendered the way `callArgs` renders them: BCS bytes, base64.
+/** The rendering of a u64 argument. */
 const u64 = (v: bigint) => `pure:${toBase64(bcs.u64().serialize(v).toBytes())}`
+/** The rendering of a bool argument. */
 const bool = (v: boolean) => `pure:${toBase64(bcs.bool().serialize(v).toBytes())}`
+/** The rendering of a string argument. */
 const str = (v: string) => `pure:${toBase64(bcs.string().serialize(v).toBytes())}`
+/** The rendering of an address argument. */
 const addr = (v: string) => `pure:${toBase64(bcs.Address.serialize(v).toBytes())}`
+/** The rendering of a `vector<u8>` argument made from a string's UTF-8 bytes. */
 const bytes = (v: string) => `pure:${toBase64(bcs.vector(bcs.u8()).serialize(new TextEncoder().encode(v)).toBytes())}`
 
 describe('ptb builders — exact arguments', () => {
   it('purchase(gate, platformConfig, payment split from gas)', () => {
     const tx = buildPurchaseTx(cfg, 500n)
+    // `result:0` is the split coin: command 0 of the transaction.
     expect(callArgs(tx, 'purchase')).toEqual([`obj:${GATE}`, `obj:${PLATFORM}`, 'result:0'])
   })
 
@@ -375,12 +412,14 @@ describe('ptb builders — exact arguments', () => {
       nftImageUrl: 'u',
       nftDescription: 'd',
     })
+    // The fee split is command 1 (command 0 builds the policy), so the coin is `result:1`.
     const args = callArgs(tx, 'create_free_gate')
     expect(args.slice(0, 3)).toEqual([`obj:${PLATFORM}`, 'result:1', addr(RECIPIENT)])
     expect(args).toHaveLength(10)
   })
 
   it('admin setters pass (cap, gate, platformConfig, value) in order', () => {
+    // Every setter starts with the same three object arguments.
     const head = [`obj:${ADMIN_CAP}`, `obj:${GATE}`, `obj:${PLATFORM}`]
     expect(callArgs(buildSetPriceTx(adminCtx, 7n), 'set_price')).toEqual([...head, u64(7n)])
     expect(callArgs(buildSetPaymentRecipientTx(adminCtx, RECIPIENT), 'set_payment_recipient')).toEqual([...head, addr(RECIPIENT)])
@@ -419,6 +458,7 @@ describe('u64 amounts', () => {
   })
 
   it('builders refuse an unsafe number instead of encoding a different amount', () => {
+    // 2^60 as a number is refused; the same value as a bigint is fine.
     const cfg = { packageId: '0x1', gateId: '0x2', platformConfigId: '0x3', nftType: '0x1::access_gate::AccessNFT' }
     expect(() => buildPurchaseTx(cfg, 2 ** 60)).toThrow(/safe integer/)
     expect(buildPurchaseTx(cfg, 2n ** 60n)).toBeTruthy()
@@ -426,10 +466,12 @@ describe('u64 amounts', () => {
 })
 
 describe('recipient addresses', () => {
+  // Short placeholder ids are enough: the recipient is checked before any id is resolved.
   const adminCtx: GateAdminContext = { packageId: '0x1', gateId: '0x2', adminCapId: '0x3', platformConfigId: '0x4' }
 
   it('accepts only the full form, trimmed and lowercased', () => {
     expect(toAddress(` 0x${'AB'.repeat(32)} `)).toBe(`0x${'ab'.repeat(32)}`)
+    // A short form, a missing prefix and a non-hex digit are all refused.
     expect(() => toAddress('0x12ab')).toThrow(/full Sui address/)
     expect(() => toAddress(`${'a'.repeat(64)}`)).toThrow(/full Sui address/)
     expect(() => toAddress(`0x${'g'.repeat(64)}`)).toThrow(/full Sui address/)

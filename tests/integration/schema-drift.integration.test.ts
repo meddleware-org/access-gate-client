@@ -9,6 +9,7 @@ import { accessGateDeployment } from '../../src/deployments.js'
 import { ACCESS_GATE_EVENT_KINDS, accessGateEventType, parseAccessGateEvent } from '../../src/events.js'
 import { fieldType } from '../chain-shape.js'
 import { STRUCT_SCHEMAS } from '../schema.js'
+import { skipIfPruned } from './pruned.js'
 
 const RUN = !!process.env.GRPC_TESTNET
 const BASE_URL = process.env.GRPC_TESTNET_URL || 'https://fullnode.testnet.sui.io:443'
@@ -26,8 +27,9 @@ describe.skipIf(!RUN)('struct shapes (real testnet package)', () => {
   }
 
   for (const kind of ACCESS_GATE_EVENT_KINDS) {
-    it(`a real ${kind} event decodes strictly (skipped when none exists on chain yet)`, async () => {
-      const res = await client.core.listEvents({ filter: { eventType: accessGateEventType(originalId, kind) }, limit: 5, order: 'descending' })
+    // Skips when no event of the kind exists or the node has pruned them (see ./pruned.ts).
+    it(`a real ${kind} event decodes strictly (skipped when none exists on chain yet)`, async (ctx) => {
+      const res = await skipIfPruned(ctx, () => client.core.listEvents({ filter: { eventType: accessGateEventType(originalId, kind) }, limit: 5, order: 'descending' }))
       for (const entry of res.events) expect(parseAccessGateEvent(entry as never, originalId)?.kind).toBe(kind)
     })
   }

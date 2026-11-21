@@ -1,6 +1,11 @@
 /**
- * Types for the access-gate client. They mirror the on-chain `access_gate` Move package; keep the
- * two in sync.
+ * @file Types for the access-gate client. They mirror the on-chain `access_gate` Move package; keep the two in sync.
+ *
+ * Role: the shapes every other module in the package produces or accepts: the configuration a caller passes to a builder, the parsed objects and events,
+ * and the structural subsets of a Sui client (`OwnedObjectsClient`, `SuiObjectClient`, `EventsClient`) that let any client exposing the core API be used
+ * without importing the SDK here. Types only: this file has no runtime code.
+ *
+ * Money is `bigint` everywhere (MIST, basis points, counts are u64 on chain); ids are normalised `0x` + 64-digit strings (see `json.ts`).
  */
 
 /** Identifies a deployed gate and the NFT type that satisfies it. */
@@ -58,7 +63,9 @@ export interface GatePolicy {
 
 /** A commission rule: `max(price × bps / 10000, minMist)`, capped at 10% of the price. */
 export interface CommissionTerms {
+  /** The percentage of the price, in basis points (1 bp = 0.01%; at most 1000 = 10%). */
   bps: bigint
+  /** The floor, in MIST, so a small price still pays a meaningful commission. */
   minMist: bigint
 }
 
@@ -121,8 +128,11 @@ export type PassVariant = { kind: 'unlimited' } | { kind: 'singleUse'; remaining
 
 /** A parsed owned access NFT. */
 export interface OwnedAccessNft {
+  /** The NFT's object id. */
   objectId: string
+  /** The gate this NFT grants access to. */
   gateId: string
+  /** Unlimited, or single-use with a count left. */
   variant: PassVariant
 }
 
@@ -132,19 +142,29 @@ export interface OwnedAccessNft {
  * structural subset so any client exposing the core API satisfies it without importing the SDK.
  */
 export interface CoreObject {
+  /** The object's id. */
   objectId: string
+  /** The Move struct type, e.g. `0x…::access_gate::AccessNFT`. */
   type?: string
+  /** The struct's fields, present only when the call asked for `include: { json: true }`. */
   json?: Record<string, unknown> | null
 }
 
 /** Minimal structural subset of a core Sui client used for owned-object listing (`SuiGrpcClient`). */
 export interface OwnedObjectsClient {
+  /** The SDK's unified core API. */
   core: {
+    /** One page of the objects an address owns, optionally only of one type, with their fields when `include.json` is set. */
     listOwnedObjects(options: {
+      /** The owner's address. */
       owner: string
+      /** Only objects of this Move type. */
       type?: string
+      /** Where the previous page ended (`null` or absent for the first page). */
       cursor?: string | null
+      /** The page size. */
       limit?: number
+      /** Ask for the object's fields as JSON. */
       include?: { json?: boolean }
     }): Promise<{ objects: CoreObject[]; hasNextPage: boolean; cursor: string | null }>
   }
@@ -152,30 +172,42 @@ export interface OwnedObjectsClient {
 
 /** Minimal structural subset of a core Sui client used for a typed single-object read. */
 export interface SuiObjectClient {
+  /** The SDK's unified core API. */
   core: {
+    /** One object by id, with its fields when `include.json` is set; rejects when it does not exist. */
     getObject(options: { objectId: string; include?: { json?: boolean } }): Promise<{ object: CoreObject }>
   }
 }
 
 /** An event as returned by the core API's `listEvents` (`SuiGrpcClient`), or served by an indexer. */
 export interface CoreEventEntry {
+  /** The event's Move type. */
   eventType: string
+  /** The address that sent the emitting transaction. */
   sender: string
   /** BCS bytes of the event struct (base64 when served by an indexer). */
   bcs: Uint8Array | string
   /** Checkpoint sequence number; `null` where the transport does not report it. */
   checkpoint: string | null
+  /** The emitting transaction's digest. */
   transactionDigest: string
+  /** The event's position within that transaction. */
   eventIndex: number
 }
 
 /** Minimal structural subset of a core Sui client used for event queries (`SuiGrpcClient`). */
 export interface EventsClient {
+  /** The SDK's unified core API. */
   core: {
+    /** One page of events, newest first by default, optionally only of one Move type. */
     listEvents(options: {
+      /** Only events of this type. */
       filter?: { eventType: string }
+      /** The page size. */
       limit?: number
+      /** Where the previous page ended. */
       before?: string | null
+      /** The order to read in. */
       order?: 'ascending' | 'descending'
     }): Promise<{ events: CoreEventEntry[]; hasNextPage: boolean; endCursor: string | null }>
   }
@@ -183,7 +215,9 @@ export interface EventsClient {
 
 /** Where an event came from, so it can be checked against a full node. */
 interface EventOrigin {
+  /** The emitting transaction's digest. */
   txDigest: string
+  /** The event's position within that transaction. */
   eventIndex: number
   /** `null` where the transport does not report it. */
   checkpoint: string | null
@@ -193,86 +227,127 @@ interface EventOrigin {
 
 /** `GateCreatedEvent` */
 export interface GateCreated extends EventOrigin {
+  /** The discriminant of `AccessGateEvent`. */
   kind: 'GateCreated'
+  /** The new gate. */
   gateId: string
+  /** The admin capability created with it. */
   adminCapId: string
+  /** The price in MIST (0 = free). */
   priceMist: bigint
+  /** 0 for an unlimited pass, else the starting uses of each NFT. */
   defaultUses: bigint
+  /** Whether the NFTs are soulbound. */
   soulbound: boolean
+  /** Whether a single-use NFT is deleted at zero uses. */
   autoBurnAtZero: boolean
+  /** The default NFT display name. */
   nftName: string
+  /** The immutable restrictions chosen at creation. */
   policy: GatePolicy
   /** Free-gate fee paid at creation (0 for a paid gate). */
   freeGateFeePaidMist: bigint
+  /** The address that created the gate. */
   creator: string
+  /** The chain's clock when it was created (milliseconds since the Unix epoch). */
   timestampMs: bigint
 }
 
 /** `AccessMintedEvent` — a purchase or an airdrop. */
 export interface AccessMinted extends EventOrigin {
+  /** The discriminant of `AccessGateEvent`. */
   kind: 'AccessMinted'
+  /** The minted NFT. */
   nftId: string
+  /** The gate it grants access to. */
   gateId: string
+  /** Whether the NFT is soulbound. */
   soulbound: boolean
   /** 0 for an unlimited pass; otherwise the single-use starting count. */
   initialUses: bigint
+  /** Who received the NFT. */
   recipient: string
+  /** The commission paid to the platform (MIST). */
   commissionMist: bigint
+  /** The chain's clock at the mint (ms since the Unix epoch). */
   timestampMs: bigint
 }
 
 /** `AccessConsumedEvent` — one use spent. */
 export interface AccessConsumed extends EventOrigin {
+  /** The discriminant of `AccessGateEvent`. */
   kind: 'AccessConsumed'
+  /** The NFT a use was spent from. */
   nftId: string
+  /** The gate it belongs to. */
   gateId: string
   /** The challenge nonce the consumption is bound to. */
   nonce: Uint8Array
   /** The NFT owner who called `consume`. */
   consumer: string
+  /** Uses left after this one. */
   usesAfter: bigint
+  /** The chain's clock at the consume (ms since the Unix epoch). */
   timestampMs: bigint
 }
 
 /** `AccessBurnedEvent` — auto-burn at zero or a voluntary burn. */
 export interface AccessBurned extends EventOrigin {
+  /** The discriminant of `AccessGateEvent`. */
   kind: 'AccessBurned'
+  /** The burned NFT. */
   nftId: string
+  /** The gate it belonged to. */
   gateId: string
+  /** The chain's clock at the burn (ms since the Unix epoch). */
   timestampMs: bigint
 }
 
 /** `GateFrozenEvent` — the gate was made immutable. */
 export interface GateFrozen extends EventOrigin {
+  /** The discriminant of `AccessGateEvent`. */
   kind: 'GateFrozen'
+  /** The gate that was frozen. */
   gateId: string
   /** The commission terms applied from now on, or `null` if the gate follows the live terms. */
   lockedCommission: CommissionTerms | null
+  /** The chain's clock at the freeze (ms since the Unix epoch). */
   timestampMs: bigint
 }
 
 /** `GateMadeFreeEvent` — the price was set to 0. */
 export interface GateMadeFree extends EventOrigin {
+  /** The discriminant of `AccessGateEvent`. */
   kind: 'GateMadeFree'
+  /** The gate whose price became 0. */
   gateId: string
   /** Free-gate fee paid now (0 if it had already been paid). */
   feePaidMist: bigint
+  /** The chain's clock at the change (ms since the Unix epoch). */
   timestampMs: bigint
 }
 
 /** `PlatformConfigUpdatedEvent` — the resulting platform configuration. */
 export interface PlatformConfigUpdated extends EventOrigin {
+  /** The discriminant of `AccessGateEvent`. */
   kind: 'PlatformConfigUpdated'
+  /** The treasury address now in force. */
   treasury: string
+  /** The commission, in basis points, now in force. */
   commissionBps: bigint
+  /** The minimum commission (MIST) now in force. */
   minCommissionMist: bigint
+  /** The one-off fee (MIST) to make a gate free, now in force. */
   freeGateFeeMist: bigint
 }
 
 /** `PlatformMigratedEvent` — `migrate` retired every package version before `toVersion`. */
 export interface PlatformMigrated extends EventOrigin {
+  /** The discriminant of `AccessGateEvent`. */
   kind: 'PlatformMigrated'
+  /** The version before the migration. */
   fromVersion: bigint
+  /** The version after it; every package version below it is retired. */
   toVersion: bigint
 }
 
@@ -287,4 +362,5 @@ export type AccessGateEvent =
   | PlatformConfigUpdated
   | PlatformMigrated
 
+/** The names of the event kinds: the `kind` of each member of `AccessGateEvent`. */
 export type AccessGateEventKind = AccessGateEvent['kind']

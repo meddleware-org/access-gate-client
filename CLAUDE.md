@@ -76,8 +76,15 @@ scripts/gen-deployments.mjs   writes/checks src/deployments.ts from @meddleware/
 tests/                        vitest unit tests; tests/integration is live testnet (GRPC_TESTNET=1)
 ```
 
-`npm run type-check`, `npm run lint`, `npm test`, `GRPC_TESTNET=1 npm run test:integration`,
-`npm run gen:deployments` / `npm run check:deployments`, `npm run build` (the `.d.ts`).
+## Commands
+
+```bash
+npm ci && npm run type-check && npm run lint && npm test   # the core of what the `check` CI job runs
+npm run check:deployments                                  # src/deployments.ts matches @meddleware/access-gate-sui (npm run gen:deployments rewrites it)
+npm run build                                              # the .d.ts files in dist/ (the only build output)
+npm audit --audit-level=high                               # the dependency check (this repo does not use mw-audit-gate)
+GRPC_TESTNET=1 npm run test:integration                    # live read-only suite against public testnet; CI runs it weekly
+```
 
 Release: bump `version`, push, tag `v<version>`; `npm-publish.yml` publishes via npm trusted publishing.
 Changes to `access_gate` structs, events or abort codes in `access-gate-sui` need the matching change here in
@@ -110,6 +117,24 @@ the same release.
   - `indexedFromCheckpoint`;
   - `polledAt` (head pages only; epoch ms of the last successful poll, `null` before any poll) — the client
     treats a missing, null or old value as unavailable (see above).
+
+## Gotchas
+
+- **Public full nodes prune events.** `listEvents` on a quiet package rejects with "requested data below earliest available" instead of returning an empty
+  page. The live tests skip on it (`tests/integration/pruned.ts`); the library lets the error through. The weekly `live-read.yml` run failed three times
+  (2026-11-02, 11-09, 11-16); the cause was reproduced on 2026-11-21 and the tests fixed (audit F27).
+- **`src/deployments.ts` is generated.** Edit `scripts/gen-deployments.mjs` (its template carries the comments), never the file; `check:deployments` fails on drift.
+- **Add every new `build*Tx` to `tests/abi-table.ts`** (and its parameter list to `EXPECTED_PARAMS`), or `tests/abi-table.test.ts` fails.
+- **`.github/audit-gate.mjs` does not exist here**, and `mw-audit-gate` is not installed: this repository does not depend on `@meddleware/frontend-config`.
+  CI runs `npm audit --audit-level=high` (nine moderate advisories in dev dependencies were listed on 2026-11-21; none high).
+- **The ids are the Move package's, not ours to edit.** `0.0.11` of `@meddleware/access-gate-sui` is pinned exactly for that reason.
+
+## Related
+
+- The audit: [`docs/audit/access-gate-client-audit.md`](docs/audit/access-gate-client-audit.md).
+- How to propose a change: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- Consumers (all at `^0.0.13`): `access-gate-ui`, `dao-ui`, `dashboard-ui`, `docs-site`, `dev-site`, `landing-site`, `sealed-storage-client`, `sealed-storage-ui`,
+  `token-issuance-ui`, `treasury-ui`, `walrus-storage-kit`, `walrus-storage-ui`; release them after this package. The Move package: `access-gate-sui`.
 
 ## Interoperability
 
