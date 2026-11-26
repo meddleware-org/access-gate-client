@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-11-26
+
 - An error for a refused indexer address no longer repeats the address (it carried any credential in it); it names the origin only.
 
 ### Changed
