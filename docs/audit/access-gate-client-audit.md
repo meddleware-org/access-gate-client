@@ -930,6 +930,13 @@ not say that the repository does not use the shared dependency gate; (4) there w
 **Remediation / evidence:** the facts above are checked against npm and the consumers' manifests; the documents are completed; the generator's template carries the comments and `npm run check:deployments`
 passes. `npm audit --audit-level=high` exits 0 and lists nine moderate advisories in dev dependencies (2026-11-21); none is high or critical, so nothing is allow-listed.
 
+### F29 — A rejected URL was repeated in an error message (a configured URL can carry a credential)
+**Severity:** Low   **Disposition:** RESOLVED (2026-11-26, unreleased)
+**Where:** `src/events.ts` (`readIndexerEvents`).
+**Issue:** the https refusal said `indexer URL must use https: <the whole URL>`; an indexer address can carry a token in its path or query.
+**Impact:** an address that holds a credential (user and password before the host, an API key in the path or query) reached an error message, and so a log line, a console or a page, exactly when the address was wrong. Found by the 2026-11-26 scan for this pattern (the same class as walrus-storage-client F30).
+**Remediation / evidence:** The message now names the indexer by its origin (`describeUrl`: scheme, host and port); a string that is not a URL is not repeated at all. A test feeds an address with a user, a password, a path key and a token and requires that none appears in the message.
+
 ### Delta notes
 - **A11Y lens:** SDK: no pages, no colours (A11Y lens not triggered).
 - **Supply chain:** published through the tag-gated trusted-publisher workflow with provenance (unchanged); Dependabot configuration present.
@@ -1452,6 +1459,6 @@ Uncovered lines (`vitest --coverage`, 2026-10-10): `aborts.ts:65`, `events.ts:37
   declaration and every interface member, a reason beside each statement group, the generator's template included); `CONTRIBUTING.md` added; README Development section and a note on pruned history; CLAUDE.md
   Commands, Gotchas and Related sections. Found and fixed **F27** (the weekly live suite red for three weeks: a public node rejects pruned ranges; tests now skip on it) and **F28** (documentation drift).
   Verified live: npm `0.0.13` latest; twelve consumers read from their manifests; Dependabot #10 open. Re-run after editing: the same commands, all passing, the live suite 37 passed and 13 skipped; the diff
-  proven comment-only apart from F27's two test files (compiled output, parsed YAML, `.gitignore` patterns, JSON configurations, the regenerated `src/deployments.ts`). Counts: F1 to F28.
+  proven comment-only apart from F27's two test files (compiled output, parsed YAML, `.gitignore` patterns, JSON configurations, the regenerated `src/deployments.ts`). Counts: F1 to F28 (F29, a URL echoed in an error message, was added later the same day).
 - [x] 2026-11-21: Template line cites DOCS, RFC, IOP and PRIV with their registry dates; their front-matter fields, Section B subsections and MUST rows added; F27 and F28 recorded in the findings and the log;
   the deployment status, packaging, test counts and consumers current.

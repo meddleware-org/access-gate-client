@@ -479,6 +479,20 @@ async function listFromRpc(
   return { events, cursor: cursor ? { source: 'rpc', value: cursor } : null, source: 'rpc' }
 }
 
+/**
+ * A URL as it may appear in an error message or a log line: its origin only (scheme, host and port). A URL can carry a credential (user and password before the host, a token or key in
+ * the path or query), so a message never repeats the whole value; a string that is not a URL is not repeated at all.
+ */
+function describeUrl(value: string): string {
+  try {
+    const { origin } = new URL(value)
+    // Schemes without a host (`data:`, `file:`) have the origin `null`.
+    return origin === 'null' ? '(an address with no host)' : origin
+  } catch {
+    return '(not a valid URL)'
+  }
+}
+
 /** Longest indexer response body read (bytes); a page of 100 events is far below it. */
 const MAX_INDEXER_RESPONSE = 1 << 20
 
@@ -556,7 +570,7 @@ export async function readIndexerEvents(
   // Plain http is allowed only to a machine's own loopback (local development).
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname)
   if (base.protocol !== 'https:' && !(base.protocol === 'http:' && loopback)) {
-    throw new Error(`indexer URL must use https: ${indexer.url}`)
+    throw new Error(`indexer URL must use https: ${describeUrl(indexer.url)}`)
   }
   // The path is ours, but a caller could pass one with a scheme, a leading slash or a backslash, any of which can leave the base: refuse.
   if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(path) || path.startsWith('/') || path.includes('\\')) {

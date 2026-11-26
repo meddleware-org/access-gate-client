@@ -434,6 +434,9 @@ describe('readIndexerEvents (shared indexer reader)', () => {
   it('refuses a plain-http indexer except on loopback', async () => {
     const fetchFn = respond(head())
     await expect(readIndexerEvents(source('http://idx.example', fetchFn), 'v1', {})).rejects.toThrow(/https/)
+    // The refusal names the indexer by its origin: an indexer address can carry a credential (user, password, a key in the path or query), which must not reach a message.
+    const refusal = await readIndexerEvents(source('http://user:s3cret@idx.example/p?token=KEY123', fetchFn), 'v1', {}).catch((e: unknown) => e)
+    expect((refusal as Error).message).toBe('indexer URL must use https: http://idx.example')
     await expect(readIndexerEvents(source('http://127.0.0.1:8080', fetchFn), 'v1', {})).resolves.toMatchObject({ events: [] })
   })
 

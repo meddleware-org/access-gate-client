@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- An error for a refused indexer address no longer repeats the address (it carried any credential in it); it names the origin only.
+
 ### Changed
 
 - Documentation: every file is annotated line by line and has a header; added `CONTRIBUTING.md`; README Development section; CLAUDE.md Commands, Gotchas and Related.
