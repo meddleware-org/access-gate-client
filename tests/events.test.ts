@@ -12,6 +12,8 @@ import {
   accessGateEventType,
   eventGateId,
   listAccessGateEvents,
+  EventHistoryPrunedError,
+  isEventHistoryPruned,
   parseAccessGateEvent,
   readIndexerEvents,
   STALE_AFTER_MS,
@@ -238,6 +240,23 @@ function eventsClient(pages: CoreEventEntry[][]) {
 }
 
 describe('listAccessGateEvents (full node)', () => {
+  // A public full node keeps only recent history; for older events it rejects instead of returning an empty page. That must reach the caller as its own, plain error.
+  it('reports a pruned history as an EventHistoryPrunedError that keeps the node\'s answer as its cause', async () => {
+    const raw = new Error('requested data below earliest available; lowest available checkpoint is 404332001')
+    const client = { core: { listEvents: vi.fn(async () => { throw raw }) } } satisfies EventsClient
+    const error = await listAccessGateEvents(client, { originalId: PKG }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(EventHistoryPrunedError)
+    expect((error as Error).message).toBe('The network node no longer keeps events this old. Older history needs the event index.')
+    expect((error as Error).cause).toBe(raw)
+    // Another failure is not dressed up as a pruned history.
+    const other = new Error('connection reset')
+    const failing = { core: { listEvents: vi.fn(async () => { throw other }) } } satisfies EventsClient
+    await expect(listAccessGateEvents(failing, { originalId: PKG })).rejects.toBe(other)
+    expect(isEventHistoryPruned(raw)).toBe(true)
+    expect(isEventHistoryPruned(error)).toBe(true)
+    expect(isEventHistoryPruned(other)).toBe(false)
+  })
+
   it('queries the whole module for several kinds and filters here', async () => {
     // Two kinds are wanted, so the node cannot filter by one type: the module filter is used and the kind is checked here.
     const client = eventsClient([[mintedEntry(GATE_A, '9'), consumedEntry(GATE_A, '8')]])

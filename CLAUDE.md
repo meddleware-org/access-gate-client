@@ -121,7 +121,7 @@ the same release.
 ## Gotchas
 
 - **Public full nodes prune events.** `listEvents` on a quiet package rejects with "requested data below earliest available" instead of returning an empty
-  page. The live tests skip on it (`tests/integration/pruned.ts`); the library lets the error through. The weekly `live-read.yml` run failed three times
+  page. The library reports it as `EventHistoryPrunedError` (`asPrunedHistoryError` wraps the node's answer; sealed-storage-client uses the same); the live tests skip on it (`tests/integration/pruned.ts`). The weekly `live-read.yml` run failed three times
   (2026-11-02, 11-09, 11-16); the cause was reproduced on 2026-11-21 and the tests fixed (audit F27).
 - **`src/deployments.ts` is generated.** Edit `scripts/gen-deployments.mjs` (its template carries the comments), never the file; `check:deployments` fails on drift.
 - **Add every new `build*Tx` to `tests/abi-table.ts`** (and its parameter list to `EXPECTED_PARAMS`), or `tests/abi-table.test.ts` fails.

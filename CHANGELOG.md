@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Documentation: every file is annotated line by line and has a header; added `CONTRIBUTING.md`; README Development section; CLAUDE.md Commands, Gotchas and Related.
 - The generated `src/deployments.ts` gains explanatory comments (written in `scripts/gen-deployments.mjs`); its ids are unchanged.
-- The live read suite skips its event tests when a public full node has pruned the package's events, instead of failing (it had failed weekly since 2026-11-02). No change to the shipped code.
+- The live read suite skips its event tests when a public full node has pruned the package's events, instead of failing (it had failed weekly since 2026-11-02).
+- `listAccessGateEvents` reports a full node that no longer keeps the history asked for as an `EventHistoryPrunedError` (new, with `isEventHistoryPruned` and `asPrunedHistoryError`), with a message written for a person and the node's answer as `cause`; it used to let the raw gRPC error through. Other errors are unchanged.
 
 ## [0.0.13] - 2026-10-30
 

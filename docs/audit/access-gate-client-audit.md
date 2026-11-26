@@ -917,7 +917,7 @@ retention, `listEvents` rejects instead of returning an empty page. The tests we
 **Impact:** the suite that guards against drift between this client and the deployed Move package (struct shapes, the ABI table, the pass-variant rendering) had been red for three weeks, so a real drift would
 have been lost among the failures; nobody had been told. The shipped code was not affected.
 **Remediation / evidence:** `tests/integration/pruned.ts` skips a test when the node answers "below earliest available" (any other error still fails); the two event tests and the eight per-kind decode tests use
-it. After the change: 37 passed, 13 skipped. The library keeps letting the error through (an empty list would hide that history exists); the README's Events section says so. The suite stays weekly. A
+it. After the change: 37 passed, 13 skipped. **Update 2026-11-26 (library change):** letting the raw gRPC error through meant an app that calls the listing without an indexer, for a quiet package, would show a person `requested data below earliest available`; the listing now reports it as `EventHistoryPrunedError` (a plain message; the node's answer as `cause`; `isEventHistoryPruned` for callers and the live tests), with a unit test, and the README's Events section says so. Apps that call it present the message (FU-0201). The suite stays weekly. A
 read-indexer (sui-indexer) is the long-term source of history for the events themselves.
 
 ### F28 — Documentation drift found by the documentation pass

@@ -94,8 +94,9 @@ page.cursor // pass back as `cursor` for older events
   (`http:` only for a loopback host); `readIndexerEvents` is the shared reader.
 - Indexer data is for display. Never use it to authorise anything.
 - **A public full node keeps only recent history.** When every event of the package is older than the node's retention, the node does not return an empty page:
-  the call rejects with `requested data below earliest available; lowest available checkpoint is N`. `listAccessGateEvents` lets that error through (an empty
-  list would hide that history exists but is unavailable); read history from the indexer, or from your own node.
+  the call rejects with `requested data below earliest available; lowest available checkpoint is N`. `listAccessGateEvents` reports it as an `EventHistoryPrunedError` (its
+  message is written for a person; the node's answer is its `cause`; `isEventHistoryPruned(e)` tests for it), not as an empty list, which would hide that history exists but is unavailable.
+  Show the message and read history from the indexer, or from your own node.
 
 ## Transactions
 

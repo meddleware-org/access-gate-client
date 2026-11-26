@@ -5,11 +5,12 @@
 // live suite had been failing on it since 2026-11-02). That is not drift in this client, so the tests that read events skip when they see it, as they
 // already skip when a page is empty. The read-indexer (sui-indexer) is the long-term source of history.
 import type { TestContext } from 'vitest'
+import { isEventHistoryPruned } from '../../src/index.js'
 
 /** True if `error` is the node saying that the range asked for has been pruned. */
 export function isPruned(error: unknown): boolean {
-  // The node's own wording, carried in the message of the gRPC error.
-  return error instanceof Error && /below earliest available/i.test(error.message)
+  // The library's own check: the node's wording, or the `EventHistoryPrunedError` the listing now throws for it.
+  return isEventHistoryPruned(error)
 }
 
 /**

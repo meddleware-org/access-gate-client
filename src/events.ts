@@ -5,7 +5,7 @@
  * original id, so a look-alike event from another package is never returned. Listings read the read-indexer first (display data only, never
  * authorisation) and fall back to a full node, which is the source of truth.
  *
- * Main exports: `listAccessGateEvents` (the listing), `parseAccessGateEvent`, `accessGateEventType`, `readIndexerEvents` (also used by
+ * Main exports: `listAccessGateEvents` (the listing), `EventHistoryPrunedError` and `asPrunedHistoryError` (a full node that no longer keeps the history asked for), `parseAccessGateEvent`, `accessGateEventType`, `readIndexerEvents` (also used by
  * sealed-storage-client), `STALE_AFTER_MS`, `CLOCK_SKEW_TOLERANCE_MS`. Tested in `tests/events.test.ts`; the layouts are pinned against the Move
  * package by `tests/schema.test.ts` and the live drift test.
  */
@@ -25,6 +25,36 @@ import type { AccessGateEventStruct } from './typeNames.js'
 
 // Events are decoded from their BCS bytes, which are exact on every transport (the `json`
 // rendering may vary between them). The layouts mirror the Move structs field for field.
+
+/**
+ * The full node no longer keeps the events asked for. A public full node keeps only recent history: once a package's events are older than its retention, `listEvents` does not
+ * answer with an empty page, it rejects ("requested data below earliest available"). That is a fact about the node, not a fault of this client or of the chain, and an empty list would hide
+ * that history exists, so it is reported as its own error. The read-indexer holds the history; a caller shows `message` (written for a person) and may offer to read from the indexer.
+ * The node's original error is `cause`.
+ */
+export class EventHistoryPrunedError extends Error {
+  constructor(options?: { cause?: unknown }) {
+    super('The network node no longer keeps events this old. Older history needs the event index.', options)
+    // The name a log or a caller can test for.
+    this.name = 'EventHistoryPrunedError'
+  }
+}
+
+/** True if `error` is the node saying the range asked for has been pruned (its own wording), or is already an `EventHistoryPrunedError`. */
+export function isEventHistoryPruned(error: unknown): boolean {
+  if (error instanceof EventHistoryPrunedError) return true
+  // The node's own wording, carried in the message of the gRPC error.
+  return error instanceof Error && /below earliest available/i.test(error.message)
+}
+
+/**
+ * Turns the node's "history pruned" rejection into an `EventHistoryPrunedError` (keeping the original as its `cause`); any other error is returned as it is. For use as
+ * `throw asPrunedHistoryError(e)` around a `listEvents` call; sealed-storage-client uses it for its own listing.
+ */
+export function asPrunedHistoryError(error: unknown): unknown {
+  if (error instanceof EventHistoryPrunedError) return error
+  return isEventHistoryPruned(error) ? new EventHistoryPrunedError({ cause: error }) : error
+}
 
 /** The BCS layout of `GatePolicy`: four booleans, in the Move struct's order. */
 const Policy = bcs.struct('GatePolicy', {
@@ -363,7 +393,8 @@ const MAX_LIMIT = 100
  * `access_gate` module, filtered here. When filtering here, a page can hold more than `limit`
  * events, or fewer when `maxPages` pages are scanned without filling it.
  *
- * @throws {Error} if the full node (or, for an indexer cursor, the indexer) fails.
+ * @throws {EventHistoryPrunedError} if the full node no longer keeps the history asked for (the indexer, if given, was tried first and `cause` is the node's answer).
+ * @throws {Error} if the full node (or, for an indexer cursor, the indexer) fails otherwise.
  */
 export async function listAccessGateEvents(
   client: EventsClient,
@@ -422,13 +453,18 @@ async function listFromRpc(
   let cursor = before
   // A bounded scan: filtering client-side may need many pages to find `limit` matches.
   for (let page = 0; page < maxPages; page++) {
-    const res = await client.core.listEvents({
-      filter: { eventType },
-      // Unfiltered: ask for just what is still needed. Filtered: ask for a full page, since many rows will be dropped.
-      limit: filtered ? RPC_PAGE : Math.min(RPC_PAGE, limit - events.length),
-      order: 'descending',
-      before: cursor,
-    })
+    // A pruned range is reported as its own error, not as a raw gRPC failure a person would see.
+    const res = await client.core
+      .listEvents({
+        filter: { eventType },
+        // Unfiltered: ask for just what is still needed. Filtered: ask for a full page, since many rows will be dropped.
+        limit: filtered ? RPC_PAGE : Math.min(RPC_PAGE, limit - events.length),
+        order: 'descending',
+        before: cursor,
+      })
+      .catch((e: unknown) => {
+        throw asPrunedHistoryError(e)
+      })
     for (const entry of res.events) {
       // A full-node row that does not decode throws: that is layout drift, which must not be hidden.
       const event = parseAccessGateEvent(entry, originalId)
