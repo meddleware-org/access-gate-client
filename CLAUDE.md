@@ -129,6 +129,10 @@ the same release.
   CI runs `npm audit --audit-level=high` (nine moderate advisories in dev dependencies were listed on 2026-11-21; none high).
 - **The ids are the Move package's, not ours to edit.** `0.0.11` of `@meddleware/access-gate-sui` is pinned exactly for that reason.
 
+## Documentation rules (workspace documentation standard, D144)
+
+Every file has a header and every declaration a TSDoc comment (private declarations included); comments say why. `node scripts/check-docs.mjs --report access-gate-client` (in the workspace repository) is the gate. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Related
 
 - The audit: [`docs/audit/access-gate-client-audit.md`](docs/audit/access-gate-client-audit.md).
